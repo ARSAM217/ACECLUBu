@@ -432,10 +432,18 @@ app.get('/robots.txt', (req, res) => {
     .send('User-agent: *\nAllow: /\nSitemap: https://aceclub.ir/sitemap.xml\n');
 });
 
-app.use('/uploads',express.static(uploadsDir, {dotfiles:'deny', index:false, fallthrough:false, maxAge:'1h'}));
+// Uploaded media receives a cryptographically random filename on every upload, so it is immutable.
+// Long-lived caching prevents images/videos from being downloaded again on every screen transition.
+app.use('/uploads',express.static(uploadsDir,{dotfiles:'deny',index:false,fallthrough:false,maxAge:'365d',immutable:true,etag:true,lastModified:true}));
 app.get('/install',(req,res)=>res.sendFile(path.join(ROOT,'public','install.html')));
 app.get('/grop/:code',(req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
-app.use(express.static(path.join(ROOT,'public')));
+// Keep the HTML entry point revalidated so deployments take effect, while caching app assets.
+app.use(express.static(path.join(ROOT,'public'),{etag:true,lastModified:true,maxAge:'1h',setHeaders(res,filePath){
+ const ext=path.extname(filePath).toLowerCase();
+ if(ext==='.html')res.setHeader('Cache-Control','no-cache, must-revalidate');
+ else if(['.js','.css','.json','.webmanifest'].includes(ext))res.setHeader('Cache-Control','public, max-age=300, stale-while-revalidate=86400');
+ else if(['.svg','.png','.jpg','.jpeg','.webp','.gif','.ico','.woff','.woff2'].includes(ext))res.setHeader('Cache-Control','public, max-age=86400, stale-while-revalidate=604800');
+ }}));
 const safeUploadExtension = mime => ({'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','image/gif':'.gif','video/mp4':'.mp4','video/webm':'.webm','video/quicktime':'.mov','audio/webm':'.webm','audio/ogg':'.ogg','audio/mpeg':'.mp3','audio/mp4':'.m4a','audio/wav':'.wav','audio/x-wav':'.wav','audio/aac':'.aac','audio/flac':'.flac','application/octet-stream':'.bin'}[String(mime||'').toLowerCase()] || '.bin');
 const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadsDir),filename:(req,file,cb)=>{const mimeExt=safeUploadExtension(file.mimetype);const originalExt=path.extname(String(file.originalname||'')).toLowerCase();const allowedExt=['.jpg','.jpeg','.png','.webp','.gif','.heic','.heif','.avif','.mp4','.m4v','.webm','.mov','.3gp','.3gpp','.mkv','.avi','.mpeg','.mpg','.mp3','.m4a','.wav','.ogg','.aac','.flac'];cb(null,crypto.randomBytes(16).toString('hex')+(mimeExt!=='.bin'?mimeExt:(allowedExt.includes(originalExt)?originalExt:'.bin')))}});
 const upload=multer({storage,limits:{fileSize:8*1024*1024},fileFilter:(req,file,cb)=>cb(null,/^(image\/(jpeg|png|webp|gif)|audio\/(webm|ogg|mpeg|mp4|wav))$/.test(file.mimetype))});
