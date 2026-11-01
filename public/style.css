@@ -876,3 +876,25 @@ body{background-color:var(--bg);background-repeat:no-repeat;background-size:cove
 
 /* Private conversation delete choice */
 .ace-delete-conversation-modal{width:min(100%,440px);padding:24px 20px}.ace-delete-mark{width:54px;height:54px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(145deg,#1e9d7540,#247be833);border:1px solid #48d5a355}.ace-delete-mark svg{width:34px;height:34px;fill:none;stroke:#65e2b1;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}.ace-delete-choice{width:100%;display:grid;grid-template-columns:30px 1fr 28px;align-items:center;gap:10px;text-align:right;padding:13px 12px;margin-top:10px;border:1px solid #ffffff1c;border-radius:16px;background:#ffffff08;color:#f7f3ff;cursor:pointer;transition:border-color .18s,background .18s,transform .18s}.ace-delete-choice:active{transform:scale(.99)}.ace-delete-choice.selected{border-color:#4bd6a0;background:linear-gradient(110deg,#1a9b7025,#287dd01b);box-shadow:inset 0 0 0 1px #4bd6a022}.ace-delete-choice-icon{font-size:22px;color:#aaa3bd;text-align:center}.ace-delete-choice.selected .ace-delete-choice-icon{color:#69e5b4}.ace-delete-choice-copy{display:grid;gap:5px}.ace-delete-choice-copy b{font-size:14px}.ace-delete-choice-copy small{font-size:11px;line-height:1.8;color:#bdb7ce}.ace-delete-check{width:25px;height:25px;display:grid;place-items:center;border-radius:50%;border:1px solid #ffffff35;color:transparent;font-size:15px;font-weight:900}.ace-delete-choice.selected .ace-delete-check{background:#36c58b;border-color:#36c58b;color:#062b20;box-shadow:0 0 14px #36c58b55}.ace-delete-conversation-modal .ace-modal-note{margin-top:12px}.ace-delete-conversation-modal .ace-decision-actions{margin-top:15px}
+
+/* Compact, fully readable unread counter and privacy/account controls. */
+.ace-unread-badge{min-width:15px;height:15px;padding:0 3px;font-size:8px;line-height:15px;box-shadow:0 1px 4px #f0445e30}
+.ace-bottomnav [data-nav-unread]{top:-4px;right:-5px;min-width:15px}
+.ace-creator-compact{font-size:8px;padding:1px 4px;opacity:.68;white-space:nowrap}
+.ace-settings-hub{display:grid;gap:12px}
+.ace-privacy-choice{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--line,#ffffff18);border-radius:15px;background:rgba(255,255,255,.025)}
+.ace-privacy-choice.active{border-color:#8d75ff88;background:rgba(141,117,255,.07)}
+.ace-privacy-choice p{margin:5px 0 0}
+.ace-private-profile-notice{grid-column:1/-1;display:grid;justify-items:center;text-align:center;gap:8px;padding:30px 16px;border:1px solid rgba(160,145,255,.22);border-radius:18px;background:linear-gradient(145deg,rgba(100,76,180,.12),rgba(255,255,255,.025))}
+.ace-private-profile-notice h3,.ace-private-profile-notice p{margin:0}
+.ace-private-lock{width:54px;height:54px;display:grid;place-items:center;border-radius:17px;background:rgba(145,120,255,.14);font-size:25px}
+.ace-follow-request{padding:10px 0;border-bottom:1px solid var(--line,#ffffff12);gap:7px;flex-wrap:wrap}
+.ace-follow-request:last-child{border-bottom:0}
+.ace-follow-request .btn{padding:8px 11px;min-width:48px}
+
+/* 2026-11-01: compact, fully readable chat unread counter on narrow phones */
+.ace-bottomnav [data-nav-unread]{position:absolute;top:-3px;right:-4px;z-index:4;line-height:normal;min-width:0;max-width:34px;pointer-events:none}
+.ace-bottomnav .nav-icon .ace-unread-badge{display:inline-flex;min-width:15px;height:15px;padding:0 3px;border:1.5px solid #101117;border-radius:999px;font-size:8px;line-height:12px;white-space:nowrap;box-sizing:border-box;justify-content:center;align-items:center}
+.chat-list-row strong .ace-unread-badge{min-width:16px;height:16px;padding:0 4px;font-size:9px;vertical-align:middle;margin-inline-start:4px}
+.ace-private-profile-notice{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:190px;padding:24px 16px;border:1px solid var(--border);border-radius:18px;background:linear-gradient(145deg,rgba(120,90,255,.10),rgba(25,25,35,.25))}
+.ace-private-profile-notice p{margin:0;color:var(--muted);text-align:center}
