@@ -41,12 +41,12 @@
       <section class="ace-game-hub-list">
         ${gameHubCard('namefamile','اسم‌فامیل','رقابت کلمه‌ای آنلاین · ۲ تا ۸ بازیکن · جایزه ویژه','ورود به بازی','ace-hub-namefamile')}
         ${gameHubCard('koodiro','کودیرو','تمام بازی‌های تخته‌ای و رقابتی کودیرو در یک بخش','مشاهده بازی‌ها','ace-hub-koodiro')}
-        ${gameHubCard('connect','کانکت','یک بازیکن در برابر همه · حدس کلمه · ۳ تا ۱۴ نفر','شروع سریع','ace-hub-connect')}
+        ${gameHubCard('connect','کانکت','یک بازیکن در برابر همه · حدس کلمه · ۳ تا ۱۴ نفر','به‌زودی','ace-hub-connect')}
         ${gameHubCard('falman','بازی‌های من','بازی‌هایی که اکنون در آن‌ها عضو مسابقه هستی','بازی‌های فعال','ace-hub-falman')}
       </section>
       <div class="ace-hub-note"><img src="/assets/ace-ui/game-safe.svg" alt=""><span>پیشرفت و جوایز بازی‌ها به حساب ACE CLUB متصل می‌ماند.</span></div>
     </main>`);
-    document.querySelectorAll('[data-hub-open]').forEach(btn=>btn.addEventListener('click',()=>{if(btn.dataset.hubOpen==='falman')return window.myActiveGamesScreen?.();api('/games/live').then(d=>{if((d.games||[]).some(g=>g.joined)){toast('ابتدا از بازی فعلی خارج شو، سپس بازی دیگری انتخاب کن');return window.myActiveGamesScreen?.()}if(btn.dataset.hubOpen==='namefamile')return window.nameFamileScreen?.();if(btn.dataset.hubOpen==='koodiro')return window.koodiroGamesScreen?.();if(btn.dataset.hubOpen==='connect')return window.connectGameScreen?.()}).catch(err=>toast(err.message))}));
+    document.querySelectorAll('[data-hub-open]').forEach(btn=>btn.addEventListener('click',()=>{if(btn.dataset.hubOpen==='falman')return window.myActiveGamesScreen?.();if(btn.dataset.hubOpen==='connect'){toast('بازی کانکت به‌روزرسانی به‌زودی');return window.connectGameScreen?.()}api('/games/live').then(d=>{if((d.games||[]).some(g=>g.joined)){toast('ابتدا از بازی فعلی خارج شو، سپس بازی دیگری انتخاب کن');return window.myActiveGamesScreen?.()}if(btn.dataset.hubOpen==='namefamile')return window.nameFamileScreen?.();if(btn.dataset.hubOpen==='koodiro')return window.koodiroGamesScreen?.();if(btn.dataset.hubOpen==='connect')return window.connectGameScreen?.()}).catch(err=>toast(err.message))}));
   };
   window.myActiveGamesScreen=async function(){
     clearTimers();view='games';document.body.classList.remove('namefamile-mode','classic-game-mode','connect-mode');

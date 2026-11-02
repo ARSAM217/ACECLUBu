@@ -898,3 +898,19 @@ body{background-color:var(--bg);background-repeat:no-repeat;background-size:cove
 .chat-list-row strong .ace-unread-badge{min-width:16px;height:16px;padding:0 4px;font-size:9px;vertical-align:middle;margin-inline-start:4px}
 .ace-private-profile-notice{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:190px;padding:24px 16px;border:1px solid var(--border);border-radius:18px;background:linear-gradient(145deg,rgba(120,90,255,.10),rgba(25,25,35,.25))}
 .ace-private-profile-notice p{margin:0;color:var(--muted);text-align:center}
+
+
+/* ACE CLUB - Connect Coming Soon */
+.connect-menu-card[data-connect-soon],
+.connect-button[data-connect-soon] {
+  opacity: .42 !important;
+  filter: grayscale(.45);
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+.connect-menu-card[data-connect-soon] b,
+.connect-menu-card[data-connect-soon] small,
+.connect-menu-card[data-connect-soon] i,
+.connect-button[data-connect-soon] {
+  color: #8991a3 !important;
+}
