@@ -941,3 +941,18 @@ button.reply-reference{cursor:pointer}
 .ace-coming-soon-tab small{font-size:9px;color:#c4b5fd}
 .ace-coming-soon-panel{min-height:220px;display:grid;place-content:center;justify-items:center;gap:10px;text-align:center;padding:24px;border:1px dashed rgba(170,150,255,.3);border-radius:18px;background:rgba(130,110,255,.06)}
 .ace-coming-soon-panel>span{font-size:34px}.ace-coming-soon-panel p{margin:0;color:var(--muted,#999)}.ace-coming-soon-panel b{color:#c4b5fd;font-size:12px}
+
+/* ACE CLUB - Global clickable links */
+a.ace-chat-link {
+  color: var(--blue, #08a9e7);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a.ace-chat-link:active {
+  opacity: 0.7;
+}
