@@ -914,3 +914,14 @@ body{background-color:var(--bg);background-repeat:no-repeat;background-size:cove
 .connect-button[data-connect-soon] {
   color: #8991a3 !important;
 }
+
+
+/* ACE CONNECT HUB DISABLED */
+.ace-hub-connect {
+  opacity: .42 !important;
+  filter: grayscale(.55);
+}
+.ace-hub-connect em,
+.ace-hub-connect small {
+  color: #8991a3 !important;
+}
