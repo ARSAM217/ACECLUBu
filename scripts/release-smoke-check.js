@@ -35,7 +35,7 @@ const checks = [
   ['session touch avoids rewriting the whole session file on every request', /touch\(sid,sess,cb\)\{if\(this\.items\[sid\]\)\{this\.items\[sid\]\.cookie=sess\.cookie;if\(Date\.now\(\)-this\.lastSavedAt>30000\)this\._save\(\);\}/.test(server)],
   ['device history backfill runs after device_id migration', server.indexOf("ALTER TABLE users ADD COLUMN ${col} ${def}") < server.indexOf('Preserve the legacy first-device binding')],
   ['safe clickable URLs in chat messages', /function aceLinkify\(/.test(app) && /target="\x27\+\(internal\?\x27_self\x27:\x27_blank\x27\)\+\x27"/.test(app)],
-  ['private chat prevents duplicate sends while request is pending', /privateSendPending/.test(app) && /sendButton\.disabled=true/.test(app)],
+  ['private chat prevents duplicate sends while request is pending', /privateSendPending/.test(app) && /if\(!body\|\|privateSendPending\)return/.test(app) && /sendButton\.classList\.add\('is-sending'\)/.test(app)],
   ['private chat follows latest message when keyboard opens', /function bindPrivateViewport\(/.test(app) && /visualViewport\.addEventListener\('resize'/.test(app)],
   ['private reply jumps to original message without exposing numeric ID', /data-jump-private-reply/.test(app) && /data-jump-private-reply=/.test(app)],
   ['reward posts remain in explore until 50 likes', /p\.reward_enabled=1 AND \(SELECT COUNT\(\*\) FROM post_likes pl WHERE pl\.post_id=p\.id\)<50/.test(server)],
