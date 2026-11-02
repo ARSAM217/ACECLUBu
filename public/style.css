@@ -925,3 +925,19 @@ body{background-color:var(--bg);background-repeat:no-repeat;background-size:cove
 .ace-hub-connect small {
   color: #8991a3 !important;
 }
+
+/* ACE CLUB interaction polish: links, compact reply references, stable chat composer */
+.ace-chat-link,a[href]{color:var(--blue,#08a9e7);text-decoration-color:color-mix(in srgb,var(--blue,#08a9e7),transparent 38%);overflow-wrap:anywhere}.ace-chat-link{text-decoration:underline;text-underline-offset:2px}.ace-chat-link:focus-visible,a[href]:focus-visible{outline:2px solid var(--blue,#08a9e7);outline-offset:3px;border-radius:4px}
+.reply-reference,.group-reply-reference{display:block;max-width:100%;width:max-content;max-width:min(100%,260px);margin:0 0 6px;padding:4px 8px;border:1px solid rgba(125,170,255,.18);border-radius:9px;background:rgba(125,170,255,.08);color:#a9c9ff;font-size:11px;line-height:1.45;text-align:right;white-space:normal;overflow-wrap:anywhere}
+button.reply-reference{cursor:pointer}
+.private-reply-banner{display:none;align-items:center;justify-content:space-between;gap:8px;margin:0 10px 6px;padding:7px 10px;border-inline-start:3px solid #8d79ff;border-radius:9px;background:rgba(141,121,255,.12);color:#d8d1ff;font-size:12px}
+.private-reply-banner button{border:0;background:transparent;color:inherit;font-size:18px}
+.reply-target-focus{outline:2px solid rgba(141,121,255,.7)!important;outline-offset:2px}
+.chat-layout .messages{overscroll-behavior:contain;scroll-behavior:smooth}
+.chat-compose{padding-bottom:max(8px,env(safe-area-inset-bottom))}
+.chat-compose textarea{max-height:112px;resize:none;overflow-y:auto}
+.chat-compose button[type=submit]:disabled{opacity:.55;pointer-events:none}
+.ace-coming-soon-tab{opacity:.58!important;cursor:not-allowed!important;display:flex;align-items:center;gap:5px}
+.ace-coming-soon-tab small{font-size:9px;color:#c4b5fd}
+.ace-coming-soon-panel{min-height:220px;display:grid;place-content:center;justify-items:center;gap:10px;text-align:center;padding:24px;border:1px dashed rgba(170,150,255,.3);border-radius:18px;background:rgba(130,110,255,.06)}
+.ace-coming-soon-panel>span{font-size:34px}.ace-coming-soon-panel p{margin:0;color:var(--muted,#999)}.ace-coming-soon-panel b{color:#c4b5fd;font-size:12px}
