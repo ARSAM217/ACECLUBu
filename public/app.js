@@ -377,7 +377,37 @@ async function groupMembersScreen(id){const d=await api('/groups/'+id);const rol
 async function groupRewardScreen(id){const layer=document.createElement('div');layer.className='chat-action-overlay';layer.innerHTML=`<section class="chat-action-sheet group-reward-sheet"><div class="sheet-handle"></div><h3>🎁 حمایت از گروه</h3><p class="muted">مقدار و نوع حمایت را انتخاب کن.</p><label>مقدار سکه</label><div class="reward-amounts">${[1,5,10,20,50].map(n=>`<button type="button" class="btn secondary" data-reward-amount="${n}">${n} سکه</button>`).join('')}</div><input class="field" id="rewardAmount" type="number" min="1" max="50" value="10"><label>نوع حمایت</label><div class="reward-amounts"><button type="button" class="btn secondary active" data-reward-kind="coins">🪙 سکه گروه</button><button type="button" class="btn secondary" data-reward-kind="fame">✨ شهرت</button></div><button class="btn block" id="sendGroupReward">ثبت حمایت</button><button class="btn secondary block" data-sheet-close>انصراف</button></section>`;let kind='coins';layer.addEventListener('click',async e=>{if(e.target===layer||e.target.closest('[data-sheet-close]')){layer.remove();return}const a=e.target.closest('[data-reward-amount]');if(a)$('#rewardAmount').value=a.dataset.rewardAmount;const k=e.target.closest('[data-reward-kind]');if(k){kind=k.dataset.rewardKind;layer.querySelectorAll('[data-reward-kind]').forEach(b=>b.classList.toggle('active',b===k))}if(e.target.closest('#sendGroupReward')){const n=Number($('#rewardAmount').value);try{const d=await api(`/groups/${id}/contribute`,{method:'POST',body:{amount:n,kind}});me=d.user;layer.remove();toast('حمایت از گروه ثبت شد');groupProfileScreen(id)}catch(err){toast(err.message)}}});document.body.append(layer)}
 async function chatScreen(){const requestedChat=Number(activeChat);$('#chatView')?.remove();app.insertAdjacentHTML('beforeend','<section class="chat-layout" id="chatView"><div class="empty" style="padding:24px">در حال دریافت پیام‌ها…</div></section>');let d;try{d=await api(`/chats/${requestedChat}/messages`)}catch(err){if(view!=='chat'||Number(activeChat)!==requestedChat)return;const box=$('#chatView');if(box)box.innerHTML=`<div class="empty" style="padding:24px">${esc(err.message)}<p><button class="btn" id="aceRetryChat">تلاش دوباره</button></p></div>`;$('#aceRetryChat')?.addEventListener('click',chatScreen);return}if(view!=='chat'||Number(activeChat)!==requestedChat)return;$('#chatView')?.remove();const peer=chatPeer||{display_name:'گفتگو'};app.insertAdjacentHTML('beforeend',`<section class="chat-layout" id="chatView"><header class="chat-head"><button class="iconbtn" id="backChats">‹</button>${avatar(peer)}<div class="grow"><b data-profile="${peer.id||peer.user_id||''}" class="${peer.equipped_name_color?'ace-name-'+peer.equipped_name_color:''}">${esc(peer.display_name)} ${creatorMark(peer.id)} ${['support','owner'].includes(peer.role)?'<small class="ace-support-badge">پشتیبانی</small>':''}</b><small class="muted" style="display:block" id="peerPresence">گفتگوی خصوصی · وضعیت در حال بررسی</small></div><button class="iconbtn voice-call-btn voice-call-disabled" id="voiceCall" title="تماس صوتی در بروزرسانی بعدی فعال می‌شود" aria-label="تماس صوتی؛ در بروزرسانی بعدی" disabled aria-disabled="true"><span aria-hidden="true">☎</span><small>به‌زودی</small></button><button class="ace-action-icon ace-menu-icon" id="chatMenu" aria-label="گزینه‌های گفتگو"><img src="/assets/ace-ui/menu-orbit.svg" alt=""></button></header><div class="messages" id="messages">${d.messages.map(messageHtml).join('')}</div><form class="chat-compose" id="compose"><label class="iconbtn" style="margin:0;cursor:pointer" title="ارسال عکس یا ویس">＋<input type="file" id="mediaFile" accept="image/*" hidden></label><textarea id="messageText" class="field" rows="1" placeholder="پیام بنویس…"></textarea><button class="iconbtn voice-coming-soon" type="button" id="recordBtn" title="ضبط ویس؛ به‌زودی" disabled aria-disabled="true"><span>🎙️</span><small>به‌زودی</small></button><button class="btn" type="submit">➤</button></form></section>`);$('#backChats').onclick=()=>goBack();$('#chatMenu').onclick=()=>showChatActions(activeChat,peer);$('#voiceCall').onclick=null;const presence=$('#peerPresence');if(presence){const seen=peer.last_seen?new Date(peer.last_seen+'Z').toLocaleString('fa-IR'):'نامشخص';presence.textContent=peer.online?'آنلاین':'آخرین بازدید: '+seen;}
 const composer=$('#messageText');if(composer){composer.setAttribute('autocomplete','off');composer.setAttribute('enterkeyhint','send');composer.addEventListener('focus',()=>{aceChatWasTyping=true});composer.addEventListener('input',()=>{aceChatWasTyping=true});composer.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#compose')?.requestSubmit()}});if(aceChatWasTyping)setTimeout(()=>{if(view==='chat'&&activeChat&&document.visibilityState==='visible'){composer.focus({preventScroll:true});try{composer.setSelectionRange(composer.value.length,composer.value.length)}catch{}}},180)}
-let replyTo=null,privateSendPending=false;$('#compose').onsubmit=async e=>{e.preventDefault();const field=$('#messageText'),sendButton=e.submitter||e.target.querySelector('button[type="submit"]'),body=field?.value.trim();if(!body||privateSendPending)return;privateSendPending=true;if(sendButton){sendButton.disabled=true;sendButton.classList.add('is-sending')}try{const sent=await api(`/chats/${activeChat}/messages`,{method:'POST',body:{body,replyTo}});replyTo=null;field.value='';field.placeholder='پیام بنویس…';$('#privateReplyBanner')?.remove();aceChatWasTyping=true;if(sent.message)appendPrivateMessage(sent.message);scrollPrivateToBottom(true)}catch(err){toast(err.message)}finally{privateSendPending=false;if(sendButton){sendButton.disabled=false;sendButton.classList.remove('is-sending')}field?.focus({preventScroll:true})}};bindPrivateViewport();$('#mediaFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!f.type.startsWith('image/')){toast('ارسال ویس فعلاً غیرفعال است؛ به‌زودی');e.target.value='';return}const fd=new FormData();fd.append('file',f);try{const sent=await api(`/chats/${activeChat}/media`,{method:'POST',body:fd});if(sent.message)appendPrivateMessage(sent.message)}catch(err){toast(err.message)}};let recorder=null, chunks=[], activeStream=null, isStartingRecording=false;
+let replyTo=null,privateSendPending=false;
+const privateCompose=$('#compose');
+privateCompose.onsubmit=async e=>{
+e.preventDefault();
+const field=$('#messageText'),sendButton=e.submitter||e.target.querySelector('button[type="submit"]'),body=field?.value.trim();
+if(!body||privateSendPending)return;
+const keepKeyboard=!!field&&document.activeElement===field;
+privateSendPending=true;
+if(sendButton){sendButton.disabled=true;sendButton.classList.add('is-sending')}
+try{
+const sent=await api(`/chats/${activeChat}/messages`,{method:'POST',body:{body,replyTo}});
+replyTo=null;
+field.value='';
+field.placeholder='پیام بنویس…';
+$('#privateReplyBanner')?.remove();
+aceChatWasTyping=true;
+if(sent.message)appendPrivateMessage(sent.message);
+scrollPrivateToBottom(true);
+}catch(err){toast(err.message)}
+finally{
+privateSendPending=false;
+if(sendButton){sendButton.disabled=false;sendButton.classList.remove('is-sending')}
+if(keepKeyboard&&field&&view==='chat'&&field.isConnected){
+requestAnimationFrame(()=>{
+field.focus({preventScroll:true});
+scrollPrivateToBottom(true);
+});
+}
+}
+};
+bindPrivateViewport();$('#mediaFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!f.type.startsWith('image/')){toast('ارسال ویس فعلاً غیرفعال است؛ به‌زودی');e.target.value='';return}const fd=new FormData();fd.append('file',f);try{const sent=await api(`/chats/${activeChat}/media`,{method:'POST',body:fd});if(sent.message)appendPrivateMessage(sent.message)}catch(err){toast(err.message)}};let recorder=null, chunks=[], activeStream=null, isStartingRecording=false;
 $('#recordBtn').onclick=async()=>{
  const btn=$('#recordBtn');
  if(isStartingRecording)return;
@@ -750,3 +780,111 @@ async function adminStoreScreen(){
   form.onsubmit=async ev=>{ev.preventDefault();const f=new FormData(form),kind=f.get('kind');try{await api('/admin/store/grant',{method:'POST',body:{userId:u.id,kind,itemId:f.get('itemId'),mode:f.get('mode'),days:Number(f.get('days')),note:f.get('note')}});toast('تغییرات فروشگاه ثبت شد');$('#storeAdminSearch').requestSubmit()}catch(err){toast(err.message)}};
  };
 }
+
+/* ACE CLUB - Global automatic link detection */
+(function aceGlobalAutoLinks() {
+  if (window.__aceGlobalAutoLinksInstalled) return;
+  window.__aceGlobalAutoLinksInstalled = true;
+
+  const URL_PATTERN = /https?:\/\/[^\s<>"']+|www\.[^\s<>"']+/gi;
+  const SKIP_SELECTOR =
+    'a,script,style,textarea,input,button,select,option,code,pre,[contenteditable="true"]';
+
+  function linkifyTextNode(node) {
+    const parent = node.parentElement;
+    if (!parent || parent.closest(SKIP_SELECTOR)) return;
+
+    const text = node.nodeValue;
+    if (!text || !/(https?:\/\/|www\.)/i.test(text)) return;
+
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match;
+    URL_PATTERN.lastIndex = 0;
+
+    while ((match = URL_PATTERN.exec(text)) !== null) {
+      let url = match[0];
+      let cleanUrl = url.replace(/[.,!?،؛:…»"'）\]}]+$/g, '');
+      if (!cleanUrl) continue;
+
+      const end = match.index + cleanUrl.length;
+
+      fragment.appendChild(
+        document.createTextNode(text.slice(lastIndex, match.index))
+      );
+
+      const link = document.createElement('a');
+      link.className = 'ace-chat-link';
+      link.href = /^www\./i.test(cleanUrl)
+        ? 'https://' + cleanUrl
+        : cleanUrl;
+      link.textContent = cleanUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+
+      fragment.appendChild(link);
+      lastIndex = end;
+      URL_PATTERN.lastIndex = match.index + url.length;
+    }
+
+    if (lastIndex === 0) return;
+
+    fragment.appendChild(
+      document.createTextNode(text.slice(lastIndex))
+    );
+
+    node.parentNode.replaceChild(fragment, node);
+  }
+
+  function scan(root) {
+    if (!root) return;
+
+    if (root.nodeType === Node.TEXT_NODE) {
+      linkifyTextNode(root);
+      return;
+    }
+
+    if (
+      root.nodeType !== Node.ELEMENT_NODE &&
+      root.nodeType !== Node.DOCUMENT_NODE &&
+      root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE
+    ) return;
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT
+    );
+
+    const nodes = [];
+    let node;
+
+    while ((node = walker.nextNode())) {
+      nodes.push(node);
+    }
+
+    nodes.forEach(linkifyTextNode);
+  }
+
+  function start() {
+    scan(document.body);
+
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          scan(node);
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  if (document.body) {
+    start();
+  } else {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  }
+})();
