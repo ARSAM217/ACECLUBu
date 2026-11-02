@@ -27,6 +27,13 @@ const checks = [
   ['private chat composer controls remain visible on mobile', /chat-compose>textarea#messageText\{display:block!important/.test(css) && /chat-compose>label\.iconbtn\{display:grid!important/.test(css) && /chat-compose>\.voice-coming-soon\{display:inline-flex!important/.test(css)],
   ['private chat delete supports personal and both-side modes', /req\.body\?\.mode==='both'/.test(server) && /hidden_a=1,hidden_b=1,closed_at=NULL/.test(server) && /hidden_a=0,hidden_b=0/.test(server)],
   ['shared delete permits a fresh message request', /UPDATE message_requests SET status='closed'/.test(server) && /UPDATE notifications SET action=NULL,request_id=NULL/.test(server) && /UPDATE message_requests SET status='pending',created_at=CURRENT_TIMESTAMP/.test(server) && /existing\?\.status==='accepted'/.test(server) && /function activateConversation\(c\)/.test(server) && !/UPDATE conversations SET hidden_a=1,hidden_b=1,closed_at=COALESCE\(closed_at,CURRENT_TIMESTAMP\)/.test(server)],
+  ['database writes are coalesced per event-loop turn', /const persistDb = \(\) => \{[\s\S]*?setImmediate\(/.test(server) && /const flushDb = \(\) =>/.test(server) && /flushDb\(\);\s*const shutdownAceClub/.test(server)],
+  ['private chat reads latest 300 messages', /SELECT \* FROM \(SELECT \* FROM messages WHERE conversation_id=\? ORDER BY id DESC LIMIT 300\) ORDER BY id ASC/.test(server)],
+  ['private chat new messages append without reloading history', /function appendPrivateMessage\(m\)/.test(app) && /socket\.on\('message',m=>\{if\(Number\(activeChat\)===Number\(m\.conversation_id\)\)\{appendPrivateMessage\(m\)/.test(app)],
+  ['private chat has lightweight read receipt endpoint', /app\.post\('\/api\/chats\/:id\/read'/.test(server)],
+  ['home independent data loads run in parallel', /Promise\.allSettled\(\[[\s\S]*?api\('\/active-users'\), api\('\/config'\)/.test(app)],
+  ['session touch avoids rewriting the whole session file on every request', /touch\(sid,sess,cb\)\{if\(this\.items\[sid\]\)\{this\.items\[sid\]\.cookie=sess\.cookie;if\(Date\.now\(\)-this\.lastSavedAt>30000\)this\._save\(\);\}/.test(server)],
+  ['device history backfill runs after device_id migration', server.indexOf("ALTER TABLE users ADD COLUMN ${col} ${def}") < server.indexOf('Preserve the legacy first-device binding')],
   ['private chat delete confirmation has designed selection ticks', /function aceDeleteConversationChoice\(\)/.test(app) && /ace-delete-check/.test(css) && /data-delete-choice=\"both\"/.test(app)],
 ];
 for (const [name, ok] of checks) {

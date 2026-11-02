@@ -28,12 +28,14 @@ const uploadsDir = path.resolve(ROOT, cfg('UPLOADS_DIR') || path.join(ROOT,'uplo
 fs.mkdirSync(dataDir, {recursive:true}); fs.mkdirSync(uploadsDir, {recursive:true});
 // File-backed session store: preserves login sessions across process restarts/deploys when dataDir is on persistent storage.
 class DurableSessionStore extends session.Store {
-  constructor(file) { super(); this.file=file; this.items={}; try { this.items=JSON.parse(fs.readFileSync(file,'utf8'))||{}; } catch {} }
-  _save(){ try { const tmp=this.file+'.tmp'; fs.writeFileSync(tmp,JSON.stringify(this.items),{mode:0o600}); fs.renameSync(tmp,this.file); } catch(e){ console.error('Session store save failed:',e.message); } }
+  constructor(file) { super(); this.file=file; this.items={}; this.lastSavedAt=0; try { this.items=JSON.parse(fs.readFileSync(file,'utf8'))||{}; } catch {} }
+  _save(){ try { const tmp=this.file+'.tmp'; fs.writeFileSync(tmp,JSON.stringify(this.items),{mode:0o600}); fs.renameSync(tmp,this.file); this.lastSavedAt=Date.now(); } catch(e){ console.error('Session store save failed:',e.message); } }
   get(sid,cb){ const row=this.items[sid]; if(!row){cb(null,null);return;} if(row.cookie?.expires && Date.parse(row.cookie.expires)<=Date.now()){delete this.items[sid];this._save();cb(null,null);return;} cb(null,JSON.parse(JSON.stringify(row))); }
   set(sid,sess,cb){this.items[sid]=JSON.parse(JSON.stringify(sess));this._save();cb&&cb(null);}
   destroy(sid,cb){delete this.items[sid];this._save();cb&&cb(null);}
-  touch(sid,sess,cb){if(this.items[sid]){this.items[sid].cookie=sess.cookie;this._save();}cb&&cb(null);}
+  // express-session calls touch on nearly every request. Refresh expiry in memory,
+  // but persist the whole sessions file at most once every 30 seconds.
+  touch(sid,sess,cb){if(this.items[sid]){this.items[sid].cookie=sess.cookie;if(Date.now()-this.lastSavedAt>30000)this._save();}cb&&cb(null);}
   clearExpired(){let changed=false;for(const [id,row] of Object.entries(this.items)){if(row.cookie?.expires&&Date.parse(row.cookie.expires)<=Date.now()){delete this.items[id];changed=true;}}if(changed)this._save();}
 }
 const sessionStore = new DurableSessionStore(path.join(dataDir,'sessions.json'));
@@ -51,12 +53,47 @@ const SQL = await initSqlJs();
 let rawDb;
 try { rawDb = fs.existsSync(dbFile) ? new SQL.Database(new Uint8Array(fs.readFileSync(dbFile))) : new SQL.Database(); }
 catch (e) { console.error('Could not open database file; starting a new database:', e.message); rawDb = new SQL.Database(); }
-const persistDb = () => {
+// sql.js keeps the live database in memory. Persist once per event-loop turn,
+// not once for every individual SQL statement: most API actions execute several
+// writes synchronously, and exporting the whole database for each write blocks
+// every other request. Writes remain atomic through a temporary file + rename.
+let dbPersistScheduled = false;
+let dbPersistDirty = false;
+let dbPersistHandle = null;
+const writeDbSnapshot = () => {
   const bytes = rawDb.export();
   fs.mkdirSync(path.dirname(dbFile), {recursive:true});
   const tmp = dbFile + '.tmp';
   fs.writeFileSync(tmp, Buffer.from(bytes), {mode:0o600});
   fs.renameSync(tmp, dbFile);
+};
+const persistDb = () => {
+  dbPersistDirty = true;
+  if (dbPersistScheduled) return;
+  dbPersistScheduled = true;
+  dbPersistHandle = setImmediate(() => {
+    dbPersistScheduled = false;
+    dbPersistHandle = null;
+    if (!dbPersistDirty) return;
+    dbPersistDirty = false;
+    try { writeDbSnapshot(); }
+    catch (e) {
+      dbPersistDirty = true;
+      console.error('Database persistence failed; retrying:', e.message);
+      const retry = setTimeout(() => { if (dbPersistDirty) persistDb(); }, 1000);
+      retry.unref?.();
+      return;
+    }
+    if (dbPersistDirty) persistDb();
+  });
+};
+const flushDb = () => {
+  if (dbPersistHandle) clearImmediate(dbPersistHandle);
+  dbPersistHandle = null;
+  dbPersistScheduled = false;
+  if (!dbPersistDirty) return;
+  dbPersistDirty = false;
+  writeDbSnapshot();
 };
 const backupDir = path.join(path.dirname(dbFile), 'backups');
 const createSafetyBackup = (label='snapshot') => {
@@ -182,6 +219,8 @@ CREATE TABLE IF NOT EXISTS post_comments(id INTEGER PRIMARY KEY AUTOINCREMENT,po
 CREATE TABLE IF NOT EXISTS post_reward_claims(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id INTEGER NOT NULL,user_id INTEGER NOT NULL,amount INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(post_id,user_id));
 CREATE INDEX IF NOT EXISTS idx_posts_explore ON posts(status,promoted,reward_enabled,created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id,id);
+CREATE INDEX IF NOT EXISTS idx_group_messages_group_id ON chat_group_messages(group_id,id);
 CREATE INDEX IF NOT EXISTS idx_post_comments ON post_comments(post_id,status,created_at);
 
 `);
@@ -224,8 +263,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS user_device_history (
  UNIQUE(user_id, device_id)
 )`);
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_user_device_history_user ON user_device_history(user_id, last_seen DESC)"); } catch {}
-// Preserve the legacy first-device binding as historical data for accounts created before this feature.
-try { db.exec("INSERT OR IGNORE INTO user_device_history(user_id,device_id,first_seen,last_seen,login_count,last_login_source) SELECT id,device_id,COALESCE(created_at,CURRENT_TIMESTAMP),COALESCE(last_seen,CURRENT_TIMESTAMP),1,'legacy' FROM users WHERE device_id IS NOT NULL AND TRIM(device_id)<>''"); } catch(e) { console.warn('Device history backfill:',e.message); }
 const validAceDeviceId = value => { const id=String(value||'').trim().slice(0,100); return id && /^[A-Za-z0-9._:-]+$/.test(id) ? id : ''; };
 function recordUserDevice(userId, value, source='session', isLogin=false) {
  const deviceId=validAceDeviceId(value); if(!deviceId || !Number(userId)) return;
@@ -250,6 +287,8 @@ function persistLoginSession(req,res,userId,done) {
  else finish();
 }
 for (const [col,def] of [['ban_reason','TEXT'],['ban_until','TEXT'],['message_pass_until','TEXT'],['diamonds','INTEGER DEFAULT 0'],['face_verified','INTEGER DEFAULT 0'],['boost_until','TEXT'],['pro_until','TEXT'],['device_id','TEXT'],['is_game_banned','INTEGER DEFAULT 0']]) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col} ${def}`); } catch(e) { if (!String(e.message).includes('duplicate column')) throw e; } }
+// Preserve the legacy first-device binding as historical data for accounts created before this feature.
+try { db.exec("INSERT OR IGNORE INTO user_device_history(user_id,device_id,first_seen,last_seen,login_count,last_login_source) SELECT id,device_id,COALESCE(created_at,CURRENT_TIMESTAMP),COALESCE(last_seen,CURRENT_TIMESTAMP),1,'legacy' FROM users WHERE device_id IS NOT NULL AND TRIM(device_id)<>''"); } catch(e) { console.warn('Device history backfill:',e.message); }
 for (const [col,def] of [['game_exit_streak','INTEGER NOT NULL DEFAULT 0'],['game_ban_until','TEXT']]) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col} ${def}`); } catch(e) { if (!String(e.message).includes('duplicate column')) throw e; } }
 for (const [col,def] of [['action','TEXT'],['from_id','INTEGER'],['request_id','INTEGER']]) { try { db.exec(`ALTER TABLE notifications ADD COLUMN ${col} ${def}`); } catch(e) { if (!String(e.message).includes('duplicate column')) throw e; } }
 for (const [col,def] of [['promoted_remaining','INTEGER NOT NULL DEFAULT 0'],['promoted_until','TEXT']]) { try { db.exec(`ALTER TABLE chat_groups ADD COLUMN ${col} ${def}`); } catch(e) { if (!String(e.message).includes('duplicate column')) throw e; } }
@@ -895,7 +934,18 @@ app.get('/api/chats',requireAuth,(req,res)=>{const uid=req.user.id;const cs=db.p
 app.get('/api/unread-counts',requireAuth,(req,res)=>res.json(unreadSummary(req.user.id)));
 app.post('/api/chats/:id/pin',requireAuth,(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});const col=req.user.id===c.user_a?'pinned_a':'pinned_b';db.prepare(`UPDATE conversations SET ${col}=1-${col} WHERE id=?`).run(c.id);res.json({ok:true});});
 app.delete('/api/chats/:id',requireAuth,(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});const mode=req.body?.mode==='both'?'both':'me';if(mode==='both'){db.prepare('UPDATE conversations SET hidden_a=1,hidden_b=1,closed_at=NULL,closed_by=? WHERE id=?').run(req.user.id,c.id);db.prepare("UPDATE message_requests SET status='closed' WHERE status IN ('pending','accepted') AND ((from_id=? AND to_id=?) OR (from_id=? AND to_id=?))").run(c.user_a,c.user_b,c.user_b,c.user_a);db.prepare("UPDATE notifications SET action=NULL,request_id=NULL,read_at=COALESCE(read_at,CURRENT_TIMESTAMP) WHERE action='message_request' AND user_id IN (?,?) AND request_id IN (SELECT id FROM message_requests WHERE status='closed' AND ((from_id=? AND to_id=?) OR (from_id=? AND to_id=?)))").run(c.user_a,c.user_b,c.user_a,c.user_b,c.user_b,c.user_a);for(const uid of [c.user_a,c.user_b])io.to('user:'+uid).emit('conversation:closed',{conversationId:c.id,closedBy:req.user.id,mode:'both'});}else{const col=req.user.id===c.user_a?'hidden_a':'hidden_b';db.prepare(`UPDATE conversations SET ${col}=1 WHERE id=?`).run(c.id);io.to('user:'+req.user.id).emit('conversation:hidden',{conversationId:c.id});}io.to('user:'+c.user_a).emit('unread:updated',unreadSummary(c.user_a));io.to('user:'+c.user_b).emit('unread:updated',unreadSummary(c.user_b));res.json({ok:true,mode,closed:false});});
-app.get('/api/chats/:id/messages',requireAuth,(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});if(conversationClosed(c))return closedConversationResponse(res);if(rejectBlocked(req,res,otherId(c,req.user.id)))return;db.prepare('UPDATE messages SET delivered_at=COALESCE(delivered_at,CURRENT_TIMESTAMP),read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL AND deleted=0').run(c.id,req.user.id);const rows=db.prepare('SELECT * FROM messages WHERE conversation_id=? ORDER BY id ASC LIMIT 300').all(c.id);io.to('user:'+otherId(c,req.user.id)).emit('messageRead',{conversationId:c.id,readerId:req.user.id});io.to('user:'+req.user.id).emit('unread:updated',unreadSummary(req.user.id));io.to('user:'+otherId(c,req.user.id)).emit('unread:updated',unreadSummary(otherId(c,req.user.id)));res.json({messages:rows});});
+app.post('/api/chats/:id/read',requireAuth,(req,res)=>{
+ const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));
+ if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});
+ if(conversationClosed(c))return closedConversationResponse(res);
+ if(rejectBlocked(req,res,otherId(c,req.user.id)))return;
+ db.prepare('UPDATE messages SET delivered_at=COALESCE(delivered_at,CURRENT_TIMESTAMP),read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL AND deleted=0').run(c.id,req.user.id);
+ io.to('user:'+otherId(c,req.user.id)).emit('messageRead',{conversationId:c.id,readerId:req.user.id});
+ io.to('user:'+req.user.id).emit('unread:updated',unreadSummary(req.user.id));
+ io.to('user:'+otherId(c,req.user.id)).emit('unread:updated',unreadSummary(otherId(c,req.user.id)));
+ res.json({ok:true});
+});
+app.get('/api/chats/:id/messages',requireAuth,(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});if(conversationClosed(c))return closedConversationResponse(res);if(rejectBlocked(req,res,otherId(c,req.user.id)))return;db.prepare('UPDATE messages SET delivered_at=COALESCE(delivered_at,CURRENT_TIMESTAMP),read_at=CURRENT_TIMESTAMP WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL AND deleted=0').run(c.id,req.user.id);const rows=db.prepare('SELECT * FROM (SELECT * FROM messages WHERE conversation_id=? ORDER BY id DESC LIMIT 300) ORDER BY id ASC').all(c.id);io.to('user:'+otherId(c,req.user.id)).emit('messageRead',{conversationId:c.id,readerId:req.user.id});io.to('user:'+req.user.id).emit('unread:updated',unreadSummary(req.user.id));io.to('user:'+otherId(c,req.user.id)).emit('unread:updated',unreadSummary(otherId(c,req.user.id)));res.json({messages:rows});});
 app.post('/api/chats/:id/messages',requireAuth,enforceRestriction('messages'),enforceRestriction('conversation'),(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});if(conversationClosed(c))return closedConversationResponse(res);const otherUser=otherId(c,req.user.id);if(db.prepare('SELECT 1 FROM blocks WHERE (user_id=? AND blocked_id=?) OR (user_id=? AND blocked_id=?)').get(req.user.id,otherUser,otherUser,req.user.id))return res.status(403).json({error:'این گفتگو به‌دلیل مسدودسازی در دسترس نیست'});const body=String(req.body.body||'').slice(0,4000);if(!body.trim())return res.status(400).json({error:'متن پیام خالی است'});const other=otherId(c,req.user.id);const isPro=!!(req.user.pro_until&&Date.parse(req.user.pro_until)>Date.now());const messagePass=!!(req.user.message_pass_until&&Date.parse(req.user.message_pass_until)>Date.now());const acceptedReq=db.prepare("SELECT 1 FROM message_requests WHERE status='accepted' AND ((from_id=? AND to_id=?) OR (from_id=? AND to_id=?))").get(req.user.id,other,other,req.user.id);const supportSender=req.user.role==='support';if(!acceptedReq&&!supportSender&&userById(other)?.account_privacy==='private')return res.status(403).json({error:'این حساب خصوصی است؛ ابتدا درخواست پیام ارسال کنید'});let paidByCoins=false;if(supportSender){/* پیام پشتیبانی بدون سهمیه و هزینه ارسال می‌شود */}else if(messagePass){/* پیام از اشتراک پیام مصرف می‌شود؛ سهمیه عادی/پرو دست‌نخورده می‌ماند */}else if(isPro){const qe=consumeProQuota(req.user.id,false);if(qe)paidByCoins=true;}else if(!consumeFreeMessageQuota(req.user.id)){paidByCoins=true;}if(paidByCoins){const cost=Math.max(0,Number(getSetting('direct_cost'))||0);const fresh=userById(req.user.id);if(Number(fresh?.coins||0)<cost)return res.status(400).json({error:`سهمیه پیام تمام شده است؛ برای ارسال این پیام ${cost} سکه لازم است`});addTx(req.user.id,-cost,'direct_message','هزینه ارسال پیام پس از اتمام سهمیه');}const replyTo=Number(req.body.replyTo)||null;if(replyTo&&!db.prepare('SELECT id FROM messages WHERE id=? AND conversation_id=? AND deleted=0').get(replyTo,c.id))return res.status(400).json({error:'پیام پاسخ معتبر نیست'});syncUserFameAndLevel(req.user.id,{fame:Math.max(0,Number(userById(req.user.id)?.fame||0),Number(userById(req.user.id)?.xp||0))+20});res.json({message:sendMessage(c,req.user.id,'text',body,'',replyTo)});});
 app.post('/api/chats/:id/media',requireAuth,upload.single('file'),(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});if(conversationClosed(c))return closedConversationResponse(res);if(rejectBlocked(req,res,otherId(c,req.user.id)))return;if(!req.file)return res.status(400).json({error:'فایل نامعتبر است؛ عکس، GIF یا ویس تا ۸ مگابایت'});if(!(req.user.pro_until&&Date.parse(req.user.pro_until)>Date.now()))return res.status(403).json({error:'ارسال عکس، GIF، استیکر و ویس در دایرکت مخصوص اشتراک پرو است'});const qe=consumeProQuota(req.user.id,false);if(qe)return res.status(429).json({error:qe});const type=req.file.mimetype==='image/gif'?'gif':req.file.mimetype.startsWith('image/')?'image':'audio';res.json({message:sendMessage(c,req.user.id,type,'', '/uploads/'+req.file.filename)});});
 app.post('/api/chats/:id/sticker',requireAuth,(req,res)=>{const c=db.prepare('SELECT * FROM conversations WHERE id=?').get(Number(req.params.id));if(!convMember(c,req.user.id))return res.status(404).json({error:'گفتگو پیدا نشد'});if(conversationClosed(c))return closedConversationResponse(res);if(rejectBlocked(req,res,otherId(c,req.user.id)))return;if(!(req.user.pro_until&&Date.parse(req.user.pro_until)>Date.now()))return res.status(403).json({error:'ارسال استیکر مخصوص اشتراک پرو است'});const sticker=String(req.body.sticker||'').slice(0,8);if(!sticker.trim())return res.status(400).json({error:'استیکر معتبر نیست'});const qe=consumeProQuota(req.user.id,false);if(qe)return res.status(429).json({error:qe});res.json({message:sendMessage(c,req.user.id,'sticker',sticker)});});
@@ -2082,6 +2132,17 @@ app.patch('/api/admin/namefamile/settings',requireAuth,requirePermission('lobby.
 
 app.get('*',(req,res)=>res.sendFile(path.join(ROOT,'public','index.html')));
 // The first successful registration becomes the owner; never seed a default password.
+flushDb();
+const shutdownAceClub = signal => {
+  console.log(`Received ${signal}; flushing ACE CLUB database before shutdown.`);
+  try { flushDb(); }
+  catch (e) { console.error('Final database flush failed:', e.message); }
+  server.close(() => { try { io.close(); } catch {} process.exit(0); });
+  const forceExit = setTimeout(() => process.exit(1), 10000);
+  forceExit.unref?.();
+};
+process.once('SIGTERM', () => shutdownAceClub('SIGTERM'));
+process.once('SIGINT', () => shutdownAceClub('SIGINT'));
 server.listen(PORT,'0.0.0.0',()=>console.log(`Dor Dor running at http://127.0.0.1:${PORT}`));
 
 }
