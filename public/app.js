@@ -379,6 +379,8 @@ async function chatScreen(){const requestedChat=Number(activeChat);$('#chatView'
 const composer=$('#messageText');if(composer){composer.setAttribute('autocomplete','off');composer.setAttribute('enterkeyhint','send');composer.addEventListener('focus',()=>{aceChatWasTyping=true});composer.addEventListener('input',()=>{aceChatWasTyping=true});composer.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#compose')?.requestSubmit()}});if(aceChatWasTyping)setTimeout(()=>{if(view==='chat'&&activeChat&&document.visibilityState==='visible'){composer.focus({preventScroll:true});try{composer.setSelectionRange(composer.value.length,composer.value.length)}catch{}}},180)}
 let replyTo=null,privateSendPending=false;
 const privateCompose=$('#compose');
+const privateSendButton=privateCompose?.querySelector('button[type="submit"]');
+privateSendButton?.addEventListener('pointerdown',e=>e.preventDefault());
 privateCompose.onsubmit=async e=>{
 e.preventDefault();
 const field=$('#messageText'),sendButton=e.submitter||e.target.querySelector('button[type="submit"]'),body=field?.value.trim();
