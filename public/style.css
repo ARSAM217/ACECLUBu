@@ -72,7 +72,7 @@ body{background-color:var(--bg);background-repeat:no-repeat;background-size:cove
 .messages,.chat-messages,.chat-panel,.message-list{background:rgba(7,8,12,.12)!important;-webkit-backdrop-filter:blur(3px) saturate(135%)!important;backdrop-filter:blur(3px) saturate(135%)!important}
 .bubble{background:rgba(32,36,45,.72)!important;border:1px solid rgba(255,255,255,.10)!important;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .bubble.mine{background:rgba(7,90,128,.78)!important}
-.field,input.field,textarea.field,select.field{background:rgba(8,10,16,.48)!important;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.field,input.field,textarea.field,select.field{background:rgba(8,10,16,.48)!important;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 
 /* Notification controls and compact coming-soon stats action */
 .notifications-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 12px}
