@@ -1,12 +1,12 @@
 {
   "name": "ace-club-social",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "ACE CLUB social and chat app",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/classic-game.js && node --check public/namefamile-game.js && node --check public/connect-game.js && node scripts/release-smoke-check.js"
+    "check": "node --check server.js && node --check public/app.js && node --check public/classic-game.js && node --check public/namefamile-game.js && node --check public/hokm-pastor-game.js && node --check lib/hokm-engine.js && node scripts/hokm-engine-test.js && node scripts/release-smoke-check.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
