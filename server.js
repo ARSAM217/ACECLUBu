@@ -1661,107 +1661,7 @@ function startGameIfReady(roomId,force=false){
 }
 // Remove legacy Connect-only persistence; unrelated game_rooms and Socket.IO remain intact.
 db.exec('DROP TABLE IF EXISTS connect_game_rewards; DROP TABLE IF EXISTS connect_games;');
-// HOKM PASTOR: authoritative four-player online rooms. No bots are advertised or inserted.
-const HokmEngine = require('./lib/hokm-engine');
-const HOKM_SUITS = HokmEngine.SUITS, HOKM_RANKS = HokmEngine.RANKS;
-const hokmDeck = HokmEngine.createDeck, hokmTeam = HokmEngine.teamForSeat;
-const hokmCardLegal = HokmEngine.canPlayCard, hokmTrickWinner = HokmEngine.winnerOfTrick;
-const hokmCode = () => { let code=''; do { code=Array.from({length:6},()=> 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[crypto.randomInt(32)]).join(''); } while(db.prepare('SELECT 1 FROM hokm_rooms WHERE room_code=?').get(code)); return code; };
-db.exec(`CREATE TABLE IF NOT EXISTS hokm_rooms(id INTEGER PRIMARY KEY AUTOINCREMENT,room_code TEXT NOT NULL UNIQUE,status TEXT NOT NULL,host_id INTEGER NOT NULL,state_json TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
-const hokmRead = id => { const r=db.prepare('SELECT * FROM hokm_rooms WHERE id=?').get(Number(id)); if(!r)return null; try{return {...r,state:JSON.parse(r.state_json||'{}')}}catch{return null} };
-const hokmSave = room => { db.prepare("UPDATE hokm_rooms SET status=?,state_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(room.status,JSON.stringify(room.state),room.id); };
-const hokmDeal = (state, hakimSeat) => {
- const dealt=HokmEngine.dealFive(hokmDeck()), hands=dealt.hands;
- state.hands=hands; state.remaining=dealt.remaining; state.hakimSeat=hakimSeat; state.trump=null;
- state.stage='choose-trump'; state.turnSeat=hakimSeat; state.trick=[]; state.tricks=[0,0];
- state.dealTricks=[0,0]; state.leadSeat=hakimSeat; state.dealNo=(state.dealNo||0)+1;
- state.history=state.history||[];
-};
-const hokmPublic = (room, uid) => {
- const s=room.state, me=s.players.find(p=>Number(p.userId)===Number(uid));
- if(!me)return null;
- return {id:room.id,code:room.room_code,status:room.status,stage:s.stage,players:s.players.map(p=>({seat:p.seat,userId:p.userId,name:p.name,avatar:p.avatar,online:Date.now()-(p.lastSeen||0)<25000,team:hokmTeam(p.seat)})),mySeat:me.seat,hakimSeat:s.hakimSeat,turnSeat:s.turnSeat,trump:s.trump,handsCount:s.hands?.map(h=>h.length)||[],hand:s.hands?.[me.seat]||[],trick:s.trick||[],tricks:s.tricks||[0,0],dealTricks:s.dealTricks||[0,0],roundScore:s.roundScore||[0,0],dealNo:s.dealNo||0,matchTarget:7,winnerTeam:s.winnerTeam??null,history:s.history||[],serverNow:Date.now()};
-};
-const hokmFindRoom = (id,uid) => {const room=hokmRead(id);if(!room||!room.state.players?.some(p=>Number(p.userId)===Number(uid)))return null;return room;};
-const hokmActiveForUser = uid => {for(const row of db.prepare("SELECT id,state_json,status FROM hokm_rooms WHERE status IN ('waiting','playing') ORDER BY id DESC").all()){try{const state=JSON.parse(row.state_json||'{}');if(state.players?.some(p=>Number(p.userId)===Number(uid)))return hokmRead(row.id);}catch{}}return null;};
-const hokmFinishDeal = room => {
- const s=room.state, won=HokmEngine.dealWinner(s.dealTricks);
- s.roundScore[won]++; s.history.push({dealNo:s.dealNo,tricks:[...s.dealTricks],winnerTeam:won});
- if(s.roundScore[won]>=7){room.status='finished';s.stage='finished';s.winnerTeam=won;return;}
- const nextHakim=(s.hakimSeat+1)%4;
- hokmDeal(s,nextHakim);
-};
-app.post('/api/hokm/rooms',requireAuth,requireGameAccess,(req,res)=>{
- const uid=Number(req.user.id);
- const active=hokmActiveForUser(uid);
- if(active)return res.json({room:hokmPublic(active,uid)});
- const u=userById(uid), code=hokmCode(), state={stage:'waiting',players:[{seat:0,userId:uid,name:u?.display_name||u?.username||'بازیکن',avatar:u?.avatar||'',lastSeen:Date.now()}],roundScore:[0,0],history:[],dealNo:0};
- const ins=db.prepare("INSERT INTO hokm_rooms(room_code,status,host_id,state_json) VALUES(?,'waiting',?,?)").run(code,uid,JSON.stringify(state));
- const room=hokmRead(ins.lastInsertRowid);res.json({room:hokmPublic(room,uid)});
-});
-app.post('/api/hokm/join',(req,res,next)=>requireAuth(req,res,()=>requireGameAccess(req,res,()=>{
- const code=String(req.body.code||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
- if(code.length!==6)return res.status(400).json({error:'کد دعوت باید ۶ حرف باشد'});
- const roomRow=db.prepare("SELECT id FROM hokm_rooms WHERE room_code=? AND status IN ('waiting','playing')").get(code);
- if(!roomRow)return res.status(404).json({error:'اتاق پیدا نشد یا مسابقه شروع شده است'});
- const room=hokmRead(roomRow.id),uid=Number(req.user.id);
- const existing=hokmActiveForUser(uid);
- if(existing){if(Number(existing.id)===Number(room.id))return res.json({room:hokmPublic(room,uid)});return res.status(409).json({error:'ابتدا از اتاق حکم فعلی خارج شو'});}
- if(room.status!=='waiting')return res.status(409).json({error:'این مسابقه شروع شده و ورود بازیکن جدید ممکن نیست'});
- if(room.state.players.length>=4)return res.status(409).json({error:'ظرفیت اتاق تکمیل است'});
- const u=userById(uid);room.state.players.push({seat:room.state.players.length,userId:uid,name:u?.display_name||u?.username||'بازیکن',avatar:u?.avatar||'',lastSeen:Date.now()});
- if(room.state.players.length===4){
-  room.status='playing';const hakim=crypto.randomInt(4);room.state.roundScore=[0,0];hokmDeal(room.state,hakim);
- }
- hokmSave(room);io.to('hokm:'+room.id).emit('hokm:update');res.json({room:hokmPublic(room,uid)});
-})));
-app.get('/api/hokm/rooms/:id',requireAuth,requireGameAccess,(req,res)=>{
- const room=hokmFindRoom(req.params.id,req.user.id);if(!room)return res.status(404).json({error:'اتاق یا عضویت شما پیدا نشد'});
- const player=room.state.players.find(p=>Number(p.userId)===Number(req.user.id)),now=Date.now();
- if(now-Number(player.lastSeen||0)>=5000){player.lastSeen=now;hokmSave(room);}
- res.json({room:hokmPublic(room,req.user.id)});
-});
-app.post('/api/hokm/rooms/:id/trump',requireAuth,requireGameAccess,(req,res)=>{
- const room=hokmFindRoom(req.params.id,req.user.id);if(!room)return res.status(404).json({error:'اتاق پیدا نشد'});
- const s=room.state,uid=Number(req.user.id),player=s.players.find(p=>Number(p.userId)===uid);
- if(room.status!=='playing'||s.stage!=='choose-trump')return res.status(409).json({error:'مرحله انتخاب حکم فعال نیست'});
- if(player.seat!==s.hakimSeat||s.turnSeat!==player.seat)return res.status(403).json({error:'فقط حاکم می‌تواند حکم را انتخاب کند'});
- const trump=String(req.body.trump||'');if(!HOKM_SUITS.includes(trump))return res.status(400).json({error:'خال حکم نامعتبر است'});
- s.trump=trump;HokmEngine.completeHands(s.hands,s.remaining);
- s.remaining=[];s.stage='playing';s.turnSeat=s.hakimSeat;s.leadSeat=s.hakimSeat;hokmSave(room);io.to('hokm:'+room.id).emit('hokm:update');res.json({room:hokmPublic(room,uid)});
-});
-app.post('/api/hokm/rooms/:id/play',requireAuth,requireGameAccess,(req,res)=>{
- const room=hokmFindRoom(req.params.id,req.user.id);if(!room)return res.status(404).json({error:'اتاق پیدا نشد'});
- const s=room.state,uid=Number(req.user.id),player=s.players.find(p=>Number(p.userId)===uid);
- const actionId=String(req.body.actionId||'').slice(0,80);
- if(!actionId)return res.status(400).json({error:'شناسه حرکت لازم است'});
- s.actions=s.actions||{};if(s.actions[actionId])return res.json({room:hokmPublic(room,uid),duplicate:true});
- if(room.status!=='playing'||s.stage!=='playing')return res.status(409).json({error:'در حال حاضر امکان بازی کارت وجود ندارد'});
- if(player.seat!==s.turnSeat)return res.status(403).json({error:'نوبت شما نیست'});
- const suit=String(req.body.suit||''),rank=Number(req.body.rank);
- if(!HOKM_SUITS.includes(suit)||!HOKM_RANKS.includes(rank))return res.status(400).json({error:'کارت نامعتبر است'});
- const hand=s.hands[player.seat],idx=hand.findIndex(c=>c.suit===suit&&c.rank===rank);
- if(idx<0)return res.status(403).json({error:'این کارت در دست شما نیست'});
- const lead=s.trick.length?s.trick[0].card.suit:null;
- if(lead&&!hokmCardLegal(hand,hand[idx],lead))return res.status(403).json({error:'باید از خال شروع‌شده پیروی کنی'});
- const card=hand.splice(idx,1)[0];s.trick.push({seat:player.seat,card});s.actions[actionId]=true;
- if(Object.keys(s.actions).length>120)s.actions=Object.fromEntries(Object.entries(s.actions).slice(-80));
- if(s.trick.length===4){
-  const winner=hokmTrickWinner(s.trick,s.trump),team=hokmTeam(winner);s.dealTricks[team]++;s.tricks[team]++;
-  s.lastTrick={cards:s.trick.map(x=>({seat:x.seat,card:x.card})),winnerSeat:winner,winnerTeam:team};
-  s.trick=[];s.turnSeat=winner;s.leadSeat=winner;
-  if(s.hands.every(h=>h.length===0))hokmFinishDeal(room);
- }else s.turnSeat=(player.seat+1)%4;
- hokmSave(room);io.to('hokm:'+room.id).emit('hokm:update');res.json({room:hokmPublic(room,uid)});
-});
-app.post('/api/hokm/rooms/:id/leave',requireAuth,(req,res)=>{
- const room=hokmFindRoom(req.params.id,req.user.id);if(!room)return res.json({ok:true});
- if(room.status==='waiting'){room.state.players=room.state.players.filter(p=>Number(p.userId)!==Number(req.user.id));room.state.players.forEach((p,i)=>p.seat=i);if(!room.state.players.length)room.status='cancelled';hokmSave(room);}
- else {room.state.players.find(p=>Number(p.userId)===Number(req.user.id)).leftAt=Date.now();hokmSave(room);}
- io.to('hokm:'+room.id).emit('hokm:update');res.json({ok:true});
-});
-
- app.post('/api/games/join',requireAuth,requireGameAccess,(req,res)=>{
+app.post('/api/games/join',requireAuth,requireGameAccess,(req,res)=>{
  const type=String(req.body.gameType||'');if(type==='drawguess')return res.status(410).json({error:'بازی نقاشی و حدس در به‌روزرسانی بعدی فعال می‌شود'});const rules=GAME_RULES[type];if(!rules)return res.status(400).json({error:'بازی معتبر نیست'});
  const existing=db.prepare("SELECT r.* FROM game_rooms r JOIN game_players p ON p.room_id=r.id WHERE p.user_id=? AND r.status IN ('waiting','playing') ORDER BY r.id DESC LIMIT 1").get(req.user.id);if(existing){if(existing.game_type!==type)return res.status(409).json({error:'ابتدا از بازی فعلی خارج شو، سپس بازی دیگری انتخاب کن'});return res.json({room:gameRoomState(existing.id,req.user.id)});}
  let room=db.prepare("SELECT * FROM game_rooms WHERE game_type=? AND status='waiting' AND room_code IS NULL ORDER BY id ASC LIMIT 1").get(type);
@@ -2237,32 +2137,27 @@ app.get('/api/namefamile/history',requireAuth,(req,res)=>{const results=db.prepa
 // Read-only live spectators: expose only permitted public game state.
 app.get('/api/admin/games/active-extra',requireAuth,requireAppCreator,(req,res)=>{
  const rows=[];
- for(const r of db.prepare("SELECT id,status,created_at,updated_at,state_json FROM hokm_rooms WHERE status IN ('waiting','playing') ORDER BY id DESC LIMIT 100").all()){const st=nfSafeJson(r.state_json);rows.push({kind:'hokm',id:Number(r.id),gameName:'حکم پاستور',status:r.status,players:(st.players||[]).length,createdAt:r.created_at});}
  for(const m of db.prepare("SELECT id,status,created_at,started_at,round_no FROM nf_matches WHERE status IN ('waiting','playing','review') ORDER BY id DESC LIMIT 200").all())rows.push({kind:'namefamile',id:Number(m.id),gameName:'اسم‌وفامیل',status:m.status,players:db.prepare('SELECT COUNT(*) n FROM nf_players WHERE match_id=?').get(m.id).n,createdAt:m.started_at||m.created_at,roundNo:m.round_no});
  rows.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));res.json({rows});
 });
 app.post('/api/admin/games/active-extra/:kind/:id/close',requireAuth,requireAppCreator,(req,res)=>{
  const kind=String(req.params.kind||''),id=Number(req.params.id),reason=String(req.body.reason||'').trim().slice(0,500);if(!reason)return res.status(400).json({error:'نوشتن دلیل پایان مسابقه الزامی است'});if(!Number.isInteger(id)||id<1)return res.status(400).json({error:'شناسه بازی نامعتبر است'});
- if(kind==='hokm'){const room=hokmRead(id);if(!room||!['waiting','playing'].includes(room.status))return res.status(404).json({error:'اتاق حکم فعال پیدا نشد'});room.status='finished';room.state.stage='finished';room.state.winnerTeam=null;room.state.adminClosed=true;room.state.reason=reason;hokmSave(room);for(const p of room.state.players||[])notify(p.userId,'مسابقه حکم پاستور توسط مدیریت پایان یافت',reason,{action:'hokm_admin_close',requestId:id});io.to('hokm:'+id).emit('hokm:update');return res.json({ok:true});}
  if(kind==='namefamile'){const m=db.prepare("SELECT * FROM nf_matches WHERE id=? AND status IN ('waiting','playing','review')").get(id);if(!m)return res.status(404).json({error:'مسابقه اسم‌وفامیل فعال پیدا نشد'});db.prepare("UPDATE nf_matches SET status='finished',finished_at=?,round_deadline=NULL,state_json=? WHERE id=?").run(Date.now(),JSON.stringify({adminClosed:true,reason}),id);const players=db.prepare('SELECT user_id FROM nf_players WHERE match_id=?').all(id);for(const player of players)notify(player.user_id,'مسابقه اسم‌وفامیل توسط مدیریت پایان یافت',reason,{action:'namefamile_admin_close',requestId:id});return res.json({ok:true});}
  return res.status(400).json({error:'نوع بازی پشتیبانی نمی‌شود'});
 });
 app.get('/api/admin/game-history-extra',requireAuth,requireAppCreator,(req,res)=>{
  const rows=[];
- for(const r of db.prepare("SELECT id,status,created_at,updated_at,state_json FROM hokm_rooms ORDER BY id DESC LIMIT 300").all()){const st=nfSafeJson(r.state_json);rows.push({kind:'hokm',id:Number(r.id),gameName:'حکم پاستور',status:r.status,createdAt:r.created_at,finishedAt:r.status==='finished'?r.updated_at:null,players:(st.players||[]).length,winnerName:st.winnerTeam===0?'تیم A':st.winnerTeam===1?'تیم B':'',reason:st.reason||''});}
  for(const m of db.prepare("SELECT id,status,created_at,started_at,finished_at,winner_id,round_no FROM nf_matches ORDER BY id DESC LIMIT 300").all())rows.push({kind:'namefamile',id:Number(m.id),gameName:'اسم‌وفامیل',status:m.status,createdAt:m.started_at||m.created_at,finishedAt:m.finished_at||null,players:db.prepare('SELECT COUNT(*) n FROM nf_players WHERE match_id=?').get(m.id).n,winnerId:m.winner_id,roundNo:m.round_no});
  rows.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));res.json({rows:rows.slice(0,300)});
 });
 app.get('/api/games/live',requireAuth,(req,res)=>{
  const items=[];
- for(const r of db.prepare("SELECT id,status,created_at,state_json FROM hokm_rooms WHERE status IN ('waiting','playing') ORDER BY id DESC LIMIT 100").all()){const st=nfSafeJson(r.state_json);items.push({kind:'hokm',id:Number(r.id),gameName:'حکم پاستور',status:r.status==='waiting'?'در انتظار بازیکنان':'در حال اجرا',players:(st.players||[]).length,joined:(st.players||[]).some(p=>Number(p.userId)===Number(req.user.id)),createdAt:r.created_at});}
  for(const m of db.prepare("SELECT id,status,created_at,started_at,round_no FROM nf_matches WHERE status IN ('waiting','playing','review') ORDER BY id DESC LIMIT 100").all()) items.push({kind:'namefamile',id:m.id,gameName:'اسم‌فامیل',status:m.status==='waiting'?'در انتظار بازیکن':m.status==='review'?'بررسی پاسخ‌ها':'در حال اجرا',players:db.prepare('SELECT COUNT(*) n FROM nf_players WHERE match_id=?').get(m.id).n,joined:!!db.prepare('SELECT 1 FROM nf_players WHERE match_id=? AND user_id=?').get(m.id,req.user.id),createdAt:m.started_at||m.created_at,roundNo:m.round_no});
  for(const r of db.prepare("SELECT r.id,r.game_type,r.status,r.created_at,r.started_at,(SELECT COUNT(*) FROM game_players p WHERE p.room_id=r.id) players FROM game_rooms r WHERE r.status IN ('waiting','playing') ORDER BY r.id DESC LIMIT 100").all()) items.push({kind:'koodiro',id:r.id,gameName:r.game_type==='advanced'?'کودیرو پیشرفته':'کودیرو کلاسیک',status:r.status==='waiting'?'در انتظار بازیکن':'در حال اجرا',players:r.players,joined:!!db.prepare('SELECT 1 FROM game_players WHERE room_id=? AND user_id=?').get(r.id,req.user.id),createdAt:r.started_at||r.created_at});
  items.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));res.json({games:items});
 });
 app.get('/api/games/live/:kind/:id',requireAuth,requireAppCreator,(req,res)=>{
  const id=Number(req.params.id),kind=String(req.params.kind||'');if(!Number.isInteger(id)||id<1)return res.status(400).json({error:'شناسه بازی نامعتبر است'});
- if(kind==='hokm'){const room=hokmRead(id);if(!room)return res.status(404).json({error:'بازی پیدا نشد'});const st=room.state;return res.json({game:{id,kind,status:room.status,players:(st.players||[]).map(p=>({id:p.userId,name:p.name,avatar:p.avatar,seat:p.seat,team:hokmTeam(p.seat)})),stage:st.stage,trump:st.trump,turnSeat:st.turnSeat,hakimSeat:st.hakimSeat,roundScore:st.roundScore||[0,0],dealTricks:st.dealTricks||[0,0],winnerTeam:st.winnerTeam??null,reason:st.reason||''}});}
  if(kind==='namefamile'){const m=db.prepare('SELECT * FROM nf_matches WHERE id=?').get(id);if(!m)return res.status(404).json({error:'بازی پیدا نشد'});const st=nfSafeJson(m.state_json);const players=db.prepare('SELECT p.user_id,u.display_name,u.username,u.avatar FROM nf_players p JOIN users u ON u.id=p.user_id WHERE p.match_id=? ORDER BY p.joined_at').all(id).map(p=>({id:p.user_id,name:p.display_name||p.username,avatar:p.avatar}));const result={id:m.id,kind,status:m.status,createdAt:m.created_at,startedAt:m.started_at,roundNo:m.round_no,roundsTotal:st.roundsTotal||5,letter:st.letter||null,categories:st.categories||[],players,winnerId:m.winner_id};if(m.status==='review'||m.status==='finished'){result.scoreboard=st.scoreboard||{};result.answers=db.prepare('SELECT a.user_id,a.answers_json,a.locked,u.display_name,u.username FROM nf_answers a JOIN users u ON u.id=a.user_id WHERE a.match_id=? AND a.round_no=?').all(id,m.round_no).map(a=>({userId:a.user_id,name:a.display_name||a.username,answers:nfSafeJson(a.answers_json),locked:!!a.locked}));}return res.json({game:result});}
  if(kind==='koodiro'){const room=gameRoomState(id,null);if(!room)return res.status(404).json({error:'بازی پیدا نشد'});const st=room.state||{};return res.json({game:{id,kind,status:room.status,gameType:room.gameType,players:(room.players||[]).map(p=>({id:p.id,name:p.name||p.displayName||'بازیکن',avatar:p.avatar})),state:st,winnerId:room.winnerId}});}
  return res.status(400).json({error:'نوع بازی پشتیبانی نمی‌شود'});

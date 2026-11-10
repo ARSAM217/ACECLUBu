@@ -5,6 +5,7 @@ const assert = require('assert');
 const server = fs.readFileSync('server.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const css = fs.readFileSync('public/style.css', 'utf8');
+const html = fs.readFileSync('public/index.html', 'utf8');
 const checks = [
   ['group join requests API', /app\.post\('\/api\/groups\/:id\/join'/.test(server) && /app\.post\('\/api\/groups\/:id\/join-requests\/:requestId\/respond'/.test(server)],
   ['group join authorization', /فقط مدیران گروه می‌توانند درخواست را بررسی کنند/.test(server)],
@@ -40,15 +41,7 @@ const checks = [
   ['support-only posts retain view-based explore limit', /COALESCE\(p\.reward_enabled,0\)=0 AND p\.support_completed=0 AND \(SELECT COUNT\(\*\) FROM post_views v WHERE v\.post_id=p\.id\)<p\.display_limit/.test(server)],
   ['profile cosmetics tab is disabled as coming soon without deleting store data', /data-store-tab="cosmetics" class="ace-coming-soon-tab" disabled/.test(app) && /id="storeCosmetics"/.test(app)],
   ['private chat delete confirmation has designed selection ticks', /function aceDeleteConversationChoice\(\)/.test(app) && /ace-delete-check/.test(css) && /data-delete-choice=\"both\"/.test(app)],
-  ['Hokm Pastor authoritative room APIs exist', /app\.post\('\/api\/hokm\/rooms'/.test(server) && /app\.post\('\/api\/hokm\/join'/.test(server) && /app\.post\('\/api\/hokm\/rooms\/:id\/play'/.test(server)],
-  ['Hokm Pastor server validates turn, card ownership and follow-suit', /player\.seat!==s\.turnSeat/.test(server) && /if\(idx<0\)/.test(server) && /hokmCardLegal\(hand,hand\[idx\],lead\)/.test(server)],
-  ['Hokm Pastor deals five cards then eight after trump selection', /for\(let round=0;round<5;round\+\+\)/.test(fs.readFileSync('lib/hokm-engine.js','utf8')) && /HokmEngine\.completeHands\(s\.hands,s\.remaining\)/.test(server)],
-  ['Hokm Pastor UI and script are wired', /hokm-pastor-game\.js/.test(fs.readFileSync('public/index.html','utf8')) && /hokmPastorScreen/.test(fs.readFileSync('public/hokm-pastor-game.js','utf8'))],
-  ['Hokm Pastor is included in admin active/history listings and can be closed with a reason', /kind:'hokm'/.test(server) && /if\(kind==='hokm'\)/.test(server) && /reason=String\(req\.body\.reason\|\|''\)/.test(server)],
-  ['Hokm Pastor has no cross-room duplicate membership', /const hokmActiveForUser/.test(server) && /ابتدا از اتاق حکم فعلی خارج شو/.test(server)],
-  ['Hokm Pastor reconnect presence is throttled', /now-Number\(player\.lastSeen\|\|0\)>=5000/.test(server)],
-  ['Hokm Pastor player seats place partners opposite', /const at=offset=>r\.players\.find\(p=>p\.seat===\(r\.mySeat\+offset\+4\)%4\)/.test(fs.readFileSync('public/hokm-pastor-game.js','utf8'))],
-  ['Connect-exclusive endpoints and client file are removed', !/\/api\/connect\//.test(server) && !fs.existsSync('public/connect-game.js')],
+  ['Connect-exclusive endpoints remain absent and legacy client is not loaded', !/\/api\/connect\//.test(server) && !/connect-game\.js/.test(html)],
   ['all app links require a safety confirmation before navigation', /Global safe-link gate/.test(app) && /aceConfirm\(message\)/.test(app) && /window\.location\.assign\(dest\.href\)/.test(app)],
   ['links follow the selected app theme color', /\.ace-chat-link,a\[href\]\{color:var\(--blue/.test(css) && /function applyTheme\(t\)/.test(app)],
 ];
