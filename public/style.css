@@ -918,3 +918,10 @@ a.ace-chat-link {
 a.ace-chat-link:active {
   opacity: 0.7;
 }
+
+/* Nearby people discovery */
+.ace-nearby-location-panel{margin:0 0 14px;padding:14px;border:1px solid #4b3bd5;background:linear-gradient(145deg,#12183d,#090d28);border-radius:17px}
+.ace-nearby-status{font-weight:800;color:#fff;font-size:13px;margin-bottom:8px}
+.ace-nearby-location-panel p{line-height:1.9;margin:5px 0 12px}
+.ace-nearby-location-panel [hidden]{display:none!important}
+.ace-nearby-distance{color:#70e5ff!important;font-weight:800;font-size:10px!important}

@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS users(
  is_banned INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, last_seen TEXT DEFAULT CURRENT_TIMESTAMP, terms_accepted_at TEXT
 );
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS user_locations(user_id INTEGER PRIMARY KEY, latitude REAL NOT NULL, longitude REAL NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS activity_log(id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER, target_user_id INTEGER, action TEXT NOT NULL, details TEXT DEFAULT '', actor_role TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS user_permissions(user_id INTEGER NOT NULL, permission TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id,permission));
 CREATE TABLE IF NOT EXISTS admin_titles(user_id INTEGER PRIMARY KEY, title TEXT NOT NULL DEFAULT 'پشتیبانی', updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS pro_usage(user_id INTEGER NOT NULL, window_key TEXT NOT NULL, window_start TEXT NOT NULL, used INTEGER DEFAULT 0, PRIMARY KEY(user_id,window_key));
@@ -815,6 +816,62 @@ app.post('/api/post-comments/:id/report',requireAuth,(req,res)=>{const id=Number
 app.delete('/api/posts/:id',requireAuth,(req,res)=>{const id=Number(req.params.id),p=db.prepare('SELECT * FROM posts WHERE id=?').get(id);if(!p)return res.status(404).json({error:'پست پیدا نشد'});if(Number(p.user_id)!==req.user.id&&!isAdmin(req.user))return res.status(403).json({error:'فقط صاحب پست یا مدیر می‌تواند آن را حذف کند'});if(Number(p.user_id)===req.user.id&&p.promoted){const views=db.prepare('SELECT COUNT(*) n FROM post_views WHERE post_id=?').get(id).n;const remaining=Math.max(0,Number(p.display_limit)-views);const baseRefund=p.support_completed?0:Math.floor(50*remaining/Math.max(1,Number(p.display_limit)));const claims=db.prepare('SELECT COALESCE(SUM(amount),0) n FROM post_reward_claims WHERE post_id=?').get(id).n;const poolRefund=Math.max(0,Number(p.reward_budget)-Number(claims));const refund=baseRefund+poolRefund;if(refund>0)addTx(req.user.id,refund,'post_refund','بازپرداخت حذف پست #'+p.post_code+' · '+remaining+' نمایش باقی‌مانده');}atomic(()=>{const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name);for(const table of tables){if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)||table==='posts')continue;let cols=[];try{cols=db.prepare(`PRAGMA table_info("${table}")`).all().map(c=>c.name)}catch{}if(cols.includes('post_id'))db.prepare(`DELETE FROM "${table}" WHERE post_id=?`).run(id);}db.prepare('DELETE FROM posts WHERE id=?').run(id);});if(p.media_url){const name=path.basename(p.media_url);try{fs.unlinkSync(path.join(uploadsDir,name))}catch{}}logActivity(req.user.id,p.user_id,'post_deleted',`حذف کامل پست #${p.post_code}`);res.json({ok:true,coins:Number(userById(req.user.id)?.coins||0)});});
 app.get('/api/posts/:id/download',requireAuth,(req,res)=>{const id=Number(req.params.id);const p=db.prepare("SELECT * FROM posts WHERE id=? AND status='active'").get(id);if(!p||!p.media_url)return res.status(404).json({error:'فایل پست پیدا نشد'});if(!p.allow_download&&Number(p.user_id)!==req.user.id)return res.status(403).json({error:'دانلود این پست غیرفعال است'});res.json({url:p.media_url,filename:path.basename(p.media_url)});});
 app.get('/api/users/promoted',requireAuth,(req,res)=>{const users=db.prepare("SELECT u.id,u.username,u.display_name,u.avatar,u.bio,u.level,u.boost_until FROM users u WHERE u.id<>? AND u.boost_until IS NOT NULL AND datetime(u.boost_until)>datetime('now') AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.blocked_id=u.id) OR (b.user_id=u.id AND b.blocked_id=?)) ORDER BY RANDOM() LIMIT 40").all(req.user.id,req.user.id,req.user.id);res.json({users});});
+
+// Nearby discovery: exact coordinates stay server-side and are never returned by the API.
+app.get('/api/nearby/status',requireAuth,(req,res)=>{
+ const row=db.prepare("SELECT updated_at FROM user_locations WHERE user_id=? AND datetime(updated_at)>datetime('now','-30 minutes')").get(req.user.id);
+ res.json({enabled:!!row,updatedAt:row?.updated_at||null});
+});
+app.post('/api/nearby/location',requireAuth,(req,res)=>{
+ const latitude=Number(req.body?.latitude),longitude=Number(req.body?.longitude);
+ if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||latitude < -90||latitude > 90||longitude < -180||longitude > 180)
+  return res.status(400).json({error:'موقعیت مکانی معتبر نیست'});
+ db.prepare("INSERT INTO user_locations(user_id,latitude,longitude,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET latitude=excluded.latitude,longitude=excluded.longitude,updated_at=CURRENT_TIMESTAMP").run(req.user.id,latitude,longitude);
+ res.json({ok:true});
+});
+app.delete('/api/nearby/location',requireAuth,(req,res)=>{
+ db.prepare('DELETE FROM user_locations WHERE user_id=?').run(req.user.id);
+ res.json({ok:true});
+});
+app.get('/api/nearby/users',requireAuth,(req,res)=>{
+ const meLoc=db.prepare("SELECT latitude,longitude FROM user_locations WHERE user_id=? AND datetime(updated_at)>datetime('now','-30 minutes')").get(req.user.id);
+ if(!meLoc)return res.status(409).json({error:'برای دیدن افراد نزدیک، ابتدا موقعیت مکانی خودت را فعال کن'});
+ // The discovery list includes every eligible account, not only promoted profiles.
+ // Users who have not shared a recent location remain visible with an unknown distance.
+ const excluded=String(req.query.exclude||'').split(',').map(x=>Number(x)).filter(x=>Number.isSafeInteger(x)&&x>0&&x!==req.user.id).slice(0,1500);
+ const params=[req.user.id,req.user.id,req.user.id];
+ let excludeSql='';
+ if(excluded.length){excludeSql=` AND u.id NOT IN (${excluded.map(()=>'?').join(',')})`;params.push(...excluded);}
+ const rows=db.prepare(`SELECT u.id,u.username,u.display_name,u.avatar,u.bio,u.level,
+  CASE WHEN datetime(l.updated_at)>datetime('now','-30 minutes') THEN l.latitude ELSE NULL END AS latitude,
+  CASE WHEN datetime(l.updated_at)>datetime('now','-30 minutes') THEN l.longitude ELSE NULL END AS longitude
+  FROM users u LEFT JOIN user_locations l ON l.user_id=u.id
+  WHERE u.id<>? AND u.is_banned=0
+  AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.blocked_id=u.id) OR (b.user_id=u.id AND b.blocked_id=?))${excludeSql}`).all(...params);
+ const rad=x=>x*Math.PI/180;
+ const users=rows.map(u=>{
+  let distance_m=null;
+  if(Number.isFinite(Number(u.latitude))&&Number.isFinite(Number(u.longitude))){
+   const dLat=rad(u.latitude-meLoc.latitude),dLon=rad(u.longitude-meLoc.longitude);
+   const a=Math.sin(dLat/2)**2+Math.cos(rad(meLoc.latitude))*Math.cos(rad(u.latitude))*Math.sin(dLon/2)**2;
+   const exact=6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+   distance_m=exact<1000?Math.max(50,Math.round(exact/50)*50):Math.round(exact/100)*100;
+  }
+  const online=!!(io.sockets.adapter.rooms.get('user:'+u.id)?.size);
+  return {id:u.id,username:u.username,display_name:u.display_name,avatar:u.avatar,bio:u.bio,level:u.level,distance_m,online};
+ });
+ // Online users with a known distance first, then offline users with a known distance;
+ // profiles without a shared/recent location follow. Randomize ties for fresh discovery.
+ users.sort((a,b)=>{
+  const group=u=>u.distance_m===null?(u.online?2:3):(u.online?0:1);
+  const g=group(a)-group(b);if(g)return g;
+  if(a.distance_m!==null&&b.distance_m!==null&&a.distance_m!==b.distance_m)return a.distance_m-b.distance_m;
+  return Math.random()-.5;
+ });
+ const selected=users.slice(0,10);
+ res.json({users:selected,remaining:Math.max(0,users.length-selected.length),total:rows.length});
+});
+
 
 app.post('/api/chats/start',requireAuth,(req,res)=>{const id=Number(req.body.userId);if(!Number.isInteger(id)||id===req.user.id||!userById(id))return res.status(400).json({error:'کاربر نامعتبر است'});if(db.prepare('SELECT 1 FROM blocks WHERE (user_id=? AND blocked_id=?) OR (user_id=? AND blocked_id=?)').get(req.user.id,id,id,req.user.id))return res.status(403).json({error:'به‌دلیل مسدودسازی امکان گفتگو وجود ندارد'});const accepted=db.prepare("SELECT 1 FROM message_requests WHERE status='accepted' AND ((from_id=? AND to_id=?) OR (from_id=? AND to_id=?))").get(req.user.id,id,id,req.user.id);const supportSender=req.user.role==='support'||req.user.role==='owner';if(!accepted&&!supportSender&&userById(id).account_privacy==='private')return res.status(403).json({error:'این حساب خصوصی است؛ ابتدا درخواست پیام ارسال کنید'});const c=activateConversation(conversationFor(req.user.id,id));const other=userById(id);res.json({conversationId:c.id,user:safeUser(other)});});
 app.patch('/api/profile',requireAuth,enforceRestriction('profile'),(req,res)=>{const {display_name,bio,avatar,province}=req.body||{};db.prepare('UPDATE users SET display_name=?,bio=?,avatar=?,province=? WHERE id=?').run(String(display_name||req.user.display_name).slice(0,40),String(bio||'').slice(0,300),String(avatar===undefined?req.user.avatar:(avatar||'')).slice(0,500),String(province===undefined?req.user.province:(province||'')).slice(0,80),req.user.id);res.json({user:safeUser(userById(req.user.id))});});
