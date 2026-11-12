@@ -229,7 +229,7 @@ async function homeScreen(){
 
     <section class="ace-hero-carousel" id="aceHeroCarousel" aria-label="کارت‌های اصلی ACE CLUB">
       <div class="ace-carousel-track">
-        <article class="ace-slide active"><div class="ace-slide-copy"><span>اعلانات مهم</span><h1>${esc(announcement.title)}</h1><p>${esc(announcement.body)}</p><div class="ace-rank-actions"><button class="ace-slide-btn" data-view="notifications">مشاهده اعلانات</button></div></div><img class="ace-slide-art" src="${svg('bell')}" alt=""></article>
+        <article class="ace-slide active"><div class="ace-slide-copy"><span>اعلانات مهم</span><h1>${esc(announcement.title)}</h1><p>${esc(announcement.body)}</p><div class="ace-rank-actions"><button class="ace-slide-btn" data-view="notifications">مشاهده اعلانات</button><a class="ace-slide-btn" href="/install">نصب اپلیکیشن</a></div></div><img class="ace-slide-art" src="${svg('bell')}" alt=""></article>
         <article class="ace-slide"><div class="ace-slide-copy"><span>رتبه‌بندی</span><h1>جایگاهت را ببین!</h1><p>رتبه روزانه و رتبه کلی خودت را دنبال کن و بالاتر برو.</p><div class="ace-rank-actions"><button class="ace-slide-btn" data-view="ranking">مشاهده رتبه‌بندی</button><button class="ace-fame-btn" data-view="fameInfo">دریافت شهرت</button></div></div>${medalIcon}</article>
         <article class="ace-slide"><div class="ace-slide-copy"><span>چالش‌ها</span><h1>با چالش‌ها شهرت بگیر</h1><p>مأموریت‌ها را کامل کن و جایزه بگیر.</p><button class="ace-slide-btn" data-view="challenges">مشاهده چالش‌ها</button></div><img class="ace-slide-art" src="${svg('challenge')}" alt=""></article>
       </div>
