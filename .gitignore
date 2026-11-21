@@ -1,0 +1,18 @@
+.env
+node_modules/
+data/
+uploads/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.backup
+*.tmp
+# Sensitive runtime state and release artifacts
+sessions.json
+.ace-creator-recovery-key
+*.log
+*.patch
+*.zip
+apk/
