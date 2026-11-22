@@ -925,3 +925,17 @@ a.ace-chat-link:active {
 .ace-nearby-location-panel p{line-height:1.9;margin:5px 0 12px}
 .ace-nearby-location-panel [hidden]{display:none!important}
 .ace-nearby-distance{color:#70e5ff!important;font-weight:800;font-size:10px!important}
+
+
+/* ACE CLUB profile avatar picker - compact horizontal strip */
+.ace-avatar-picker{display:block;width:100%;max-width:100%;min-width:0;margin:12px 0 0;box-sizing:border-box}
+.ace-avatar-picker-title{font-size:13px;color:var(--muted,#aab2c0);margin:0 0 8px;text-align:right}
+.ace-avatar-scroll{display:block;width:100%;max-width:100%;min-width:0;height:138px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;direction:ltr;box-sizing:border-box}
+.ace-avatar-scroll::-webkit-scrollbar{display:none}
+.ace-avatar-grid{display:grid;grid-template-rows:repeat(2,62px);grid-auto-flow:column;grid-auto-columns:62px;gap:8px;width:max-content;max-width:none;padding:3px 4px 5px;box-sizing:border-box}
+.ace-avatar-choice{display:block;width:62px;height:62px;min-width:62px;max-width:62px;padding:0;border-radius:50%;border:2px solid #303746;background:#111827;overflow:hidden;cursor:pointer;box-sizing:border-box}
+.ace-avatar-choice img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.ace-avatar-choice.selected{border:3px solid #39d0ff;box-shadow:0 0 8px #39d0ff80}
+.edit-profile-card,.edit-profile-avatar{max-width:100%;min-width:0;overflow:hidden;box-sizing:border-box}
+.edit-profile-avatar .ace-avatar-picker{flex:0 0 100%}
+

@@ -603,10 +603,96 @@ function applyChatBackground(bg){const img=localStorage.getItem('ddchatbackgroun
 
 
 function applyTheme(t){const colors={dark:'#08a9e7',blue:'#3989ff',purple:'#c026d3',red:'#ef4444',green:'#10b981',gold:'#f59e0b',pink:'#ec4899',cyan:'#06b6d4',orange:'#f97316',indigo:'#6366f1',rose:'#fb7185',teal:'#14b8a6',lime:'#84cc16',violet:'#8b5cf6',ice:'#7dd3fc',ruby:'#e11d48',mint:'#34d399',copper:'#c2410c',ocean:'#0284c7',lavender:'#a78bfa'};document.documentElement.style.setProperty('--blue',colors[t]||colors.dark)}
-async function editProfileScreen(){shell(`${topbar('ویرایش پروفایل')}<main class="content"><form id="profileEdit" class="card edit-profile-card"><div class="edit-profile-avatar">${avatar(me,'large')}<label class="btn secondary" for="avatarFile">📷 انتخاب عکس از گوشی</label><input class="field" type="file" id="avatarFile" accept="image/*" hidden></div><label>نام نمایشی</label><input class="field" name="display_name" maxlength="40" required value="${esc(me.display_name)}"><label>درباره من</label><textarea class="field" name="bio" maxlength="300" rows="4" placeholder="چند خط درباره خودت…">${esc(me.bio||'')}</textarea><label>شهر / استان</label><input class="field" name="province" maxlength="80" value="${esc(me.province||'')}" placeholder="مثلاً تهران"><label>شماره تلفن</label><input class="field readonly-field" value="${esc(me.phone||'ثبت نشده')}" readonly><label>شناسه کاربری</label><input class="field readonly-field" value="${Number(me.id)}" readonly><button class="btn block" style="margin-top:18px" type="submit">ذخیره تغییرات</button></form></main>`);$('#profileEdit').onsubmit=async e=>{e.preventDefault();try{const fd=new FormData(e.target);const data={display_name:fd.get('display_name'),bio:fd.get('bio'),province:fd.get('province')};const d=await api('/profile',{method:'PATCH',body:data});me=d.user;const file=$('#avatarFile').files[0];if(file){const upload=new FormData();upload.append('file',file);const a=await api('/profile/avatar',{method:'POST',body:upload});me=a.user}toast('تغییرات پروفایل ذخیره شد');view='profile';viewStack=[];profileScreen()}catch(err){toast(err.message)}};const avatarInput=$('#avatarFile');if(avatarInput)avatarInput.onchange=()=>{const file=avatarInput.files?.[0];if(!file)return;if(!file.type.startsWith('image/')){toast('لطفاً فایل تصویری انتخاب کن');avatarInput.value='';return}const reader=new FileReader();reader.onload=()=>{const box=$('.edit-profile-avatar .avatar');if(box)box.innerHTML=`<img src="${reader.result}" alt="پیش‌نمایش عکس">`};reader.readAsDataURL(file)}}
-function openAvatarViewer(src,name){if(!src)return toast('برای این کاربر عکسی ثبت نشده');const overlay=document.createElement('div');overlay.className='avatar-viewer';overlay.innerHTML=`<button class="avatar-viewer-close" aria-label="بستن">×</button><img src="${esc(src)}" alt="${esc(name||'عکس پروفایل')}"><div>${esc(name||'عکس پروفایل')}</div>`;overlay.addEventListener('click',()=>overlay.remove());document.body.append(overlay)}
-function showInfoSheet(title,body){const layer=document.createElement('div');layer.className='chat-action-overlay';layer.innerHTML=`<section class="chat-action-sheet"><div class="sheet-handle"></div><h3>${esc(title)}</h3><p class="muted" style="white-space:pre-line;line-height:1.9">${esc(body)}</p><button data-sheet-close>باشه</button></section>`;layer.onclick=e=>{if(e.target===layer||e.target.closest('[data-sheet-close]'))layer.remove()};document.body.append(layer)}
+async function editProfileScreen(){
+const avatarNames=[
+'01_Neon_Sunglasses.svg','02_Purple_Hood.svg','03_Golden_King.svg',
+'04_Red_Assassin.svg','05_Cyber_Soldier.svg','06_Silver_Ninja.svg',
+'07_Gamer_Girl.svg','08_Blue_Wolf.svg','09_Jester.svg','10_Black_Ninja.svg',
+'11_Samurai.svg','12_Shadow_Panther.svg','13_Ice_Queen.svg','14_Demon.svg',
+'15_Golden_Knight.svg','16_Space_Explorer.svg','17_Red_Hood_Mask.svg',
+'18_Moon_King.svg','19_Fire_Phoenix.svg','20_Ice_Dragon.svg'
+];
+let selectedAvatar=null;
+shell(`${topbar('ویرایش پروفایل')}<main class="content"><form id="profileEdit" class="card edit-profile-card">
+<div class="edit-profile-avatar">${avatar(me,'large')}
+<label class="btn secondary" for="avatarFile">📷 انتخاب عکس از گوشی</label>
+<input class="field" type="file" id="avatarFile" accept="image/*" hidden>
+<div class="ace-avatar-picker">
+<div class="ace-avatar-picker-title">یا آواتار آماده انتخاب کن</div>
+<div class="ace-avatar-scroll"><div class="ace-avatar-grid" id="aceAvatarGrid"></div></div>
+</div></div>
+<label>نام نمایشی</label><input class="field" name="display_name" maxlength="40" required value="${esc(me.display_name)}">
+<label>درباره من</label><textarea class="field" name="bio" maxlength="300" rows="4" placeholder="چند خط درباره خودت…">${esc(me.bio||'')}</textarea>
+<label>شهر / استان</label><input class="field" name="province" maxlength="80" value="${esc(me.province||'')}" placeholder="مثلاً تهران">
+<label>شماره تلفن</label><input class="field readonly-field" value="${esc(me.phone||'ثبت نشده')}" readonly>
+<label>شناسه کاربری</label><input class="field readonly-field" value="${Number(me.id)}" readonly>
+<button class="btn block" style="margin-top:18px" type="submit">ذخیره تغییرات</button></form></main>`);
 
+const avatarGrid=$('#aceAvatarGrid');
+if(avatarGrid){
+ avatarGrid.innerHTML=avatarNames.map((name,i)=>`<button type="button" class="ace-avatar-choice" data-avatar-url="/assets/avatars/${name}" title="آواتار ${i+1}"><img src="/assets/avatars/${name}" alt="آواتار ${i+1}" loading="lazy"></button>`).join('');
+ avatarGrid.addEventListener('click',e=>{
+  const choice=e.target.closest('[data-avatar-url]');
+  if(!choice)return;
+  avatarGrid.querySelectorAll('.ace-avatar-choice').forEach(x=>x.classList.remove('selected'));
+  choice.classList.add('selected');
+  selectedAvatar=choice.dataset.avatarUrl;
+  const box=$('.edit-profile-avatar .avatar');
+  if(box)box.innerHTML=`<img src="${selectedAvatar}" alt="آواتار انتخاب شده">`;
+  const input=$('#avatarFile');
+  if(input)input.value='';
+ });
+}
+
+$('#profileEdit').onsubmit=async e=>{
+ e.preventDefault();
+ const submit=e.target.querySelector('button[type="submit"]');
+ if(submit){submit.disabled=true;submit.dataset.oldText=submit.textContent;submit.textContent='در حال ذخیره…'}
+ try{
+  const fd=new FormData(e.target);
+  const data={display_name:fd.get('display_name'),bio:fd.get('bio'),province:fd.get('province')};
+  const d=await api('/profile',{method:'PATCH',body:data});
+  me=d.user;
+  const file=$('#avatarFile').files?.[0];
+  if(file){
+   const upload=new FormData();upload.append('file',file);
+   const a=await api('/profile/avatar',{method:'POST',body:upload});me=a.user;
+  }else if(selectedAvatar){
+   // Convert same-origin SVG avatar to PNG so the existing image-upload
+   // validation accepts it.
+   const response=await fetch(selectedAvatar);
+   if(!response.ok)throw new Error('فایل آواتار پیدا نشد');
+   const svgBlob=await response.blob();
+   const objectUrl=URL.createObjectURL(svgBlob);
+   try{
+    const image=new Image();
+    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('بارگذاری آواتار ناموفق بود'));image.src=objectUrl});
+    const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(image,0,0,256,256);
+    const pngBlob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('تبدیل آواتار ناموفق بود')),'image/png'));
+    const upload=new FormData();
+    upload.append('file',new File([pngBlob],`ace-avatar-${Date.now()}.png`,{type:'image/png'}));
+    const a=await api('/profile/avatar',{method:'POST',body:upload});me=a.user;
+   }finally{URL.revokeObjectURL(objectUrl)}
+  }
+  toast('تغییرات پروفایل ذخیره شد');view='profile';viewStack=[];profileScreen();
+ }catch(err){
+  toast(err.message);
+  if(submit){submit.disabled=false;submit.textContent=submit.dataset.oldText||'ذخیره تغییرات'}
+ }
+};
+const avatarInput=$('#avatarFile');
+if(avatarInput)avatarInput.onchange=()=>{
+ const file=avatarInput.files?.[0];if(!file)return;
+ if(!file.type.startsWith('image/')){toast('لطفاً فایل تصویری انتخاب کن');avatarInput.value='';return}
+ selectedAvatar=null;
+ avatarGrid?.querySelectorAll('.ace-avatar-choice').forEach(x=>x.classList.remove('selected'));
+ const reader=new FileReader();
+ reader.onload=()=>{const box=$('.edit-profile-avatar .avatar');if(box)box.innerHTML=`<img src="${reader.result}" alt="پیش‌نمایش عکس">`};
+ reader.readAsDataURL(file);
+};
+}
 function showOwnProfileMenu(){const old=$('.chat-action-overlay');old?.remove();const layer=document.createElement('div');layer.className='chat-action-overlay';layer.innerHTML=`<section class="chat-action-sheet"><div class="sheet-handle"></div><h3>گزینه‌های پروفایل</h3><button data-own-profile-option="editProfile">✏️ ویرایش پروفایل</button><button data-own-profile-option="followRequests">👥 درخواست‌های دنبال کردن</button><button data-own-profile-option="blocked">🚫 کاربران مسدودشده</button><button data-own-profile-option="settings">⚙ تنظیمات</button><button data-own-profile-option="security">🛡️ امنیت حساب</button><button data-own-profile-option="privacy">🔒 حریم خصوصی حساب</button><button data-own-profile-option="transactions">🧾 تراکنش‌ها</button><button data-own-profile-option="support">🎧 پشتیبانی</button><button data-own-profile-option="logout" class="sheet-danger">↪ خروج از حساب</button><button data-sheet-close>بستن</button></section>`;layer.addEventListener('click',e=>{if(e.target===layer||e.target.closest('[data-sheet-close]')){layer.remove();return}const b=e.target.closest('[data-own-profile-option]');if(!b)return;layer.remove();const action=b.dataset.ownProfileOption;if(action==='editProfile')go('editProfile');else if(action==='blocked')go('blockedUsers');else if(action==='followRequests')go('followRequests');else if(action==='privacy')go('privacy');else if(action==='settings')go('settings');else if(action==='transactions')go('transactions');else if(action==='support')go('tickets');else if(action==='logout'){api('/security/status').then(status=>{if(!status.hasPhone){toast('برای خروج امن، ابتدا شماره تلفن همراه را ثبت کن');go('securityPhone');return}return api('/auth/logout',{method:'POST'}).then(()=>{me=null;view='home';viewStack=[];if(socket){socket.disconnect();socket=null}render()})}).catch(err=>toast(err.message))}else go('security')});document.body.append(layer)}
 
 
